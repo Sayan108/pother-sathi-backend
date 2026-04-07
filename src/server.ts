@@ -4,11 +4,15 @@ import { connectDatabase } from './config/database';
 import { initSocketServer } from './config/socket';
 import { initSocketHandlers } from './sockets';
 import { env } from './config/environment';
+import { seedDevelopmentDrivers } from './services/dev-seed.service';
 import { logger } from './utils/logger';
 
 async function bootstrap(): Promise<void> {
   // 1. Connect to MongoDB
   await connectDatabase();
+
+  // 1.1 Seed sample active drivers for local development
+  await seedDevelopmentDrivers();
 
   // 2. Create Express app
   const app = createApp();

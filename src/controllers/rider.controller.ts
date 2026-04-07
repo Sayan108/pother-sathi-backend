@@ -68,13 +68,13 @@ export async function getRideHistory(req: Request, res: Response): Promise<void>
   const skip = (page - 1) * limit;
 
   const [rides, total] = await Promise.all([
-    Ride.find({ riderId: req.user!.id })
+    Ride.find({ riderId: req.user!.id, status: 'completed' })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .populate('driverId', 'name phone avatar vehicleType vehicleNumber rating')
       .lean(),
-    Ride.countDocuments({ riderId: req.user!.id }),
+    Ride.countDocuments({ riderId: req.user!.id, status: 'completed' }),
   ]);
 
   sendSuccess(res, 'Ride history fetched', rides, 200, {

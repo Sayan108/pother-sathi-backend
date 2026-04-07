@@ -44,4 +44,9 @@ export const env = {
   // Demo mode (use mock OTP instead of Twilio)
   DEMO_MODE: process.env.DEMO_MODE === 'true' || process.env.NODE_ENV === 'development',
   DEMO_OTP: process.env.DEMO_OTP || '123456',
+
+  // Development helpers
+  DEV_SEED_ACTIVE_DRIVERS:
+    process.env.DEV_SEED_ACTIVE_DRIVERS === 'true' ||
+    (process.env.DEV_SEED_ACTIVE_DRIVERS !== 'false' && process.env.NODE_ENV !== 'production'),
 };
