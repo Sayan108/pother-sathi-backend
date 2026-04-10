@@ -33,15 +33,7 @@ export function createApp(): Application {
   );
 
   // Global rate limiter
-  app.use(
-    rateLimit({
-      windowMs: 15 * 60 * 1000,
-      max: 200,
-      standardHeaders: true,
-      legacyHeaders: false,
-      message: { success: false, message: "Too many requests. Slow down." },
-    }),
-  );
+  
 
   // ── Parsing ───────────────────────────────────────────────────────────────────
   app.use(express.json({ limit: "1mb" }));
