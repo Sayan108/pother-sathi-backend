@@ -14,13 +14,14 @@ import rateLimit from 'express-rate-limit';
 
 const router = Router();
 
-// Stricter rate limit for OTP endpoints to prevent abuse
+// Stricter rate limit for OTP endpoints to prevent brute-force attacks
 const otpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5000000000000000000,
+  max: 5,
   message: { success: false, message: 'Too many OTP requests. Try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
 });
 
 // POST /api/auth/send-otp

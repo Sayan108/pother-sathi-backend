@@ -65,3 +65,10 @@ yarn-debug.log*
 # Build output
 dist/
 build/
+
+# Jest
+coverage/
+junit.xml
+
+# MongoDB memory server cache
+.mongodb/

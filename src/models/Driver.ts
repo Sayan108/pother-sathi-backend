@@ -80,7 +80,7 @@ const driverSchema = new Schema<IDriver>(
       match: [/^\d{10,15}$/, 'Invalid phone number'],
     },
     countryCode: { type: String, default: '+91' },
-    name: { type: String,  trim: true },
+    name: { type: String, trim: true },
     email: {
       type: String,
       trim: true,
@@ -95,11 +95,10 @@ const driverSchema = new Schema<IDriver>(
 
     vehicleType: {
       type: String,
-     
       enum: ['bike', 'auto', 'toto', 'car', 'delivery'],
     },
     vehicleModel: { type: String },
-    vehicleNumber: { type: String,  uppercase: true },
+    vehicleNumber: { type: String, uppercase: true },
     vehicleColor: { type: String },
     vehicleYear: { type: String },
 

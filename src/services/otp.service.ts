@@ -37,19 +37,24 @@ export async function sendOTP(
   userType: OTPUserType,
   purpose: OTPPurpose = 'login'
 ): Promise<SendOTPResult> {
+  // Sanitize inputs to prevent NoSQL injection
+  const safePhone = String(phone).replace(/[^\d]/g, '');
+  const safeCountryCode = String(countryCode).replace(/[^\d+]/g, '');
+  const safeUserType = String(userType) as OTPUserType;
+
   // Invalidate any existing active OTP
   await OTP.updateMany(
-    { phone, countryCode, userType, isUsed: false },
+    { phone: safePhone, countryCode: safeCountryCode, userType: safeUserType, isUsed: false },
     { isUsed: true }
   );
 
   const code = env.DEMO_MODE ? env.DEMO_OTP : generateOTPCode();
   const expiresAt = new Date(Date.now() + env.OTP_EXPIRY_MINUTES * 60 * 1000);
 
-  await OTP.create({ phone, countryCode, code, purpose, userType, expiresAt });
+  await OTP.create({ phone: safePhone, countryCode: safeCountryCode, code, purpose, userType: safeUserType, expiresAt });
 
   if (env.DEMO_MODE) {
-    logger.info(`[DEMO] OTP for ${countryCode}${phone}: ${code}`);
+    logger.info(`[DEMO] OTP for ${safeCountryCode}${safePhone}: ${code}`);
     return { success: true, message: 'OTP sent (demo mode)', otp: code };
   }
 
@@ -59,13 +64,13 @@ export async function sendOTP(
     await client.messages.create({
       body: `Your Pather Sathi OTP is: ${code}. Valid for ${env.OTP_EXPIRY_MINUTES} minutes. Do not share this code.`,
       from: env.TWILIO_PHONE_NUMBER,
-      to: `${countryCode}${phone}`,
+      to: `${safeCountryCode}${safePhone}`,
     });
     return { success: true, message: 'OTP sent successfully' };
   } catch (error) {
     logger.error('Failed to send OTP via Twilio:', error);
     // Delete the unused OTP on send failure
-    await OTP.deleteMany({ phone, countryCode, userType, isUsed: false });
+    await OTP.deleteMany({ phone: safePhone, countryCode: safeCountryCode, userType: safeUserType, isUsed: false });
     throw new Error('Failed to send OTP. Please try again.');
   }
 }
@@ -85,10 +90,16 @@ export async function verifyOTP(
   code: string,
   userType: OTPUserType
 ): Promise<VerifyOTPResult> {
+  // Sanitize inputs to prevent NoSQL injection
+  const safePhone = String(phone).replace(/[^\d]/g, '');
+  const safeCountryCode = String(countryCode).replace(/[^\d+]/g, '');
+  const safeCode = String(code).replace(/[^\d]/g, '');
+  const safeUserType = String(userType) as OTPUserType;
+
   const otpRecord = await OTP.findOne({
-    phone,
-    countryCode,
-    userType,
+    phone: safePhone,
+    countryCode: safeCountryCode,
+    userType: safeUserType,
     isUsed: false,
     expiresAt: { $gt: new Date() },
   }).sort({ createdAt: -1 });
@@ -102,7 +113,7 @@ export async function verifyOTP(
     return { success: false, message: 'Too many failed attempts. Please request a new OTP.' };
   }
 
-  if (otpRecord.code !== code) {
+  if (otpRecord.code !== safeCode) {
     await OTP.updateOne({ _id: otpRecord._id }, { $inc: { attempts: 1 } });
     const remaining = env.OTP_MAX_ATTEMPTS - otpRecord.attempts - 1;
     return {
