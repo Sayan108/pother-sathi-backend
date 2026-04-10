@@ -150,7 +150,6 @@ const driverSchema = new Schema<IDriver>(
 );
 
 driverSchema.index({ location: '2dsphere' });
-driverSchema.index({ phone: 1 });
 driverSchema.index({ isOnline: 1, isAvailable: 1, accountStatus: 1 });
 
 driverSchema.statics.findByPhone = function (

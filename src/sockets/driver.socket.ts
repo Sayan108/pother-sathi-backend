@@ -35,7 +35,7 @@ export function registerDriverSocketHandlers(
       const ride = await Ride.findOne({
         _id: rideId,
         status: "searching",
-      }).lean();
+      });
       if (!ride) {
         cb({ success: false, error: "Ride is no longer available" });
         return;

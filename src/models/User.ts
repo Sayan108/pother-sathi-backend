@@ -67,7 +67,6 @@ const userSchema = new Schema<IUser>(
   }
 );
 
-userSchema.index({ phone: 1 });
 userSchema.index({ email: 1 }, { sparse: true });
 
 userSchema.statics.findByPhone = function (
