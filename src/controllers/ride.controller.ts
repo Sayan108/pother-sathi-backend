@@ -124,8 +124,9 @@ export async function getRide(req: Request, res: Response): Promise<void> {
   }
 
   // Only rider or assigned driver can view
-  const isRider = ride.riderId._id?.toString() === req.user!.id;
-  const isDriver = ride.driverId?.toString() === req.user!.id;
+  const isRider = (ride.riderId as any)?._id?.toString() === req.user!.id;
+  const populatedDriverId = (ride.driverId as any)?._id?.toString();
+  const isDriver = populatedDriverId === req.user!.id;
   if (!isRider && !isDriver) {
     sendForbidden(res, "Access denied");
     return;

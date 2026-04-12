@@ -32,16 +32,19 @@ export function createApp(): Application {
     }),
   );
 
-  // Global rate limiter
-  app.use(
-    rateLimit({
-      windowMs: 15 * 60 * 1000,
-      max: 200,
-      standardHeaders: true,
-      legacyHeaders: false,
-      message: { success: false, message: "Too many requests. Slow down." },
-    }),
-  );
+  // Global rate limiter (skip in test environment)
+  if (env.NODE_ENV !== 'test') {
+    app.use(
+      rateLimit({
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        max: 100,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { success: false, message: 'Too many requests. Please try again later.' },
+      }),
+    );
+  }
+
 
   // ── Parsing ───────────────────────────────────────────────────────────────────
   app.use(express.json({ limit: "1mb" }));

@@ -1,7 +1,7 @@
 import mongoose, { Document, Schema, Model } from 'mongoose';
 
 export type VehicleType = 'bike' | 'auto' | 'toto' | 'car' | 'delivery';
-export type DriverStatus = 'pending' | 'verified' | 'rejected' | 'suspended';
+export type DriverStatus = 'incomplete' | 'pending' | 'verified' | 'rejected' | 'suspended';
 
 export interface IDriver extends Document {
   _id: mongoose.Types.ObjectId;
@@ -80,7 +80,7 @@ const driverSchema = new Schema<IDriver>(
       match: [/^\d{10,15}$/, 'Invalid phone number'],
     },
     countryCode: { type: String, default: '+91' },
-    name: { type: String, required: true, trim: true },
+    name: { type: String, trim: true },
     email: {
       type: String,
       trim: true,
@@ -95,11 +95,10 @@ const driverSchema = new Schema<IDriver>(
 
     vehicleType: {
       type: String,
-      required: true,
       enum: ['bike', 'auto', 'toto', 'car', 'delivery'],
     },
-    vehicleModel: { type: String, required: true },
-    vehicleNumber: { type: String, required: true, uppercase: true },
+    vehicleModel: { type: String },
+    vehicleNumber: { type: String, uppercase: true },
     vehicleColor: { type: String },
     vehicleYear: { type: String },
 
@@ -124,8 +123,8 @@ const driverSchema = new Schema<IDriver>(
 
     accountStatus: {
       type: String,
-      enum: ['pending', 'verified', 'rejected', 'suspended'],
-      default: 'pending',
+      enum: [  'incomplete', 'pending', 'verified', 'rejected', 'suspended'],
+      default: 'incomplete',
     },
     isOnline: { type: Boolean, default: false },
     isAvailable: { type: Boolean, default: false },
@@ -150,7 +149,6 @@ const driverSchema = new Schema<IDriver>(
 );
 
 driverSchema.index({ location: '2dsphere' });
-driverSchema.index({ phone: 1 });
 driverSchema.index({ isOnline: 1, isAvailable: 1, accountStatus: 1 });
 
 driverSchema.statics.findByPhone = function (

@@ -14,10 +14,10 @@ export const env = {
   PORT: parseInt(process.env.PORT || '5000', 10),
 
   // MongoDB
-  MONGODB_URI:  process.env.MONGODB_URI , 
+  MONGODB_URI: process.env.MONGODB_URI,
 
   // JWT
-  JWT_SECRET:process.env.JWT_SECRET ,
+  JWT_SECRET: process.env.JWT_SECRET,
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || required('JWT_REFRESH_SECRET'),
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
