@@ -67,8 +67,6 @@ const userSchema = new Schema<IUser>(
   }
 );
 
-userSchema.index({ email: 1 }, { sparse: true });
-
 userSchema.statics.findByPhone = function (
   phone: string,
   countryCode = '+91'

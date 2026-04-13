@@ -27,6 +27,15 @@ async function bootstrap(): Promise<void> {
   initSocketHandlers(io);
 
   // 6. Start listening
+  httpServer.once('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EADDRINUSE') {
+      logger.error(`Port ${env.PORT} is already in use. Stop the existing process or set a different PORT.`);
+    } else {
+      logger.error('Failed to start HTTP server:', error);
+    }
+    process.exit(1);
+  });
+
   httpServer.listen(env.PORT, () => {
     logger.info(`🚀 Pather Sathi backend running on port ${env.PORT}`);
     logger.info(`   Environment : ${env.NODE_ENV}`);
