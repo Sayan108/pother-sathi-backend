@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { body } from "express-validator";
-import { Driver, VehicleType } from "../models/Driver";
+import { Driver, VehicleType, IDriver } from "../models/Driver";
 import { Ride } from "../models/Ride";
 import { Transaction } from "../models/Transaction";
 import {
@@ -158,6 +158,60 @@ export async function registerDriver(
       id: driver._id,
     },
   );
+}
+
+function hasDriverDocuments(driver: IDriver) {
+  return !!(
+    driver.name &&
+    driver.vehicleType &&
+    driver.vehicleModel &&
+    driver.vehicleNumber &&
+    driver.licenseNumber &&
+    driver.licenseDocument &&
+    driver.vehicleDocument
+  );
+}
+
+/**
+ * PATCH /api/driver/activate
+ * Activate a pending driver once profile and documents are complete.
+ */
+export async function activateDriver(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const driver = await Driver.findById(req.user!.id);
+  if (!driver) {
+    sendNotFound(res, "Driver account not found");
+    return;
+  }
+
+  if (driver.accountStatus === "verified") {
+    sendConflict(res, "Driver is already verified");
+    return;
+  }
+
+  if (driver.accountStatus !== "pending") {
+    sendForbidden(res, "Driver account is not ready for activation");
+    return;
+  }
+
+  if (!hasDriverDocuments(driver)) {
+    sendError(
+      res,
+      "Complete your profile and upload required documents before activation.",
+      400,
+    );
+    return;
+  }
+
+  driver.accountStatus = "verified";
+  driver.isVerified = true;
+  await driver.save();
+
+  sendSuccess(res, "Driver account activated. You can now go online.", {
+    accountStatus: driver.accountStatus,
+  });
 }
 
 /**

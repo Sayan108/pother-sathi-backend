@@ -1,10 +1,11 @@
-import { Router } from 'express';
+import { Router } from "express";
 import {
   registerDriver,
   getProfile,
   updateProfile,
   toggleOnlineStatus,
   updateLocation,
+  activateDriver,
   getRideHistory,
   getWallet,
   rechargeWallet,
@@ -12,14 +13,14 @@ import {
   registerDriverValidation,
   locationUpdateValidation,
   rechargeWalletValidation,
-} from '../controllers/driver.controller';
+} from "../controllers/driver.controller";
 import {
   authenticate,
   requireDriver,
   requireVerifiedDriver,
-} from '../middleware/auth.middleware';
-import { validateRequest } from '../middleware/validation.middleware';
-import { body } from 'express-validator';
+} from "../middleware/auth.middleware";
+import { validateRequest } from "../middleware/validation.middleware";
+import { body } from "express-validator";
 
 const router = Router();
 
@@ -27,54 +28,62 @@ const router = Router();
 router.use(authenticate, requireDriver);
 
 // POST /api/driver/register   (any driver can complete their profile)
-router.post('/register', registerDriverValidation, validateRequest, registerDriver);
+router.post(
+  "/register",
+  registerDriverValidation,
+  validateRequest,
+  registerDriver,
+);
 
 // GET  /api/driver/profile
-router.get('/profile', getProfile);
+router.get("/profile", getProfile);
 
 // PUT  /api/driver/profile
-router.put('/profile', validateRequest, updateProfile);
+router.put("/profile", validateRequest, updateProfile);
 
 // Below routes require verified driver account:
 
+// PATCH /api/driver/activate
+router.patch("/activate", activateDriver);
+
 // PATCH /api/driver/online-status
 router.patch(
-  '/online-status',
+  "/online-status",
   requireVerifiedDriver,
-  [body('isOnline').isBoolean().withMessage('isOnline must be boolean')],
+  [body("isOnline").isBoolean().withMessage("isOnline must be boolean")],
   validateRequest,
-  toggleOnlineStatus
+  toggleOnlineStatus,
 );
 
 // PATCH /api/driver/location
 router.patch(
-  '/location',
+  "/location",
   requireVerifiedDriver,
   locationUpdateValidation,
   validateRequest,
-  updateLocation
+  updateLocation,
 );
 
 // GET  /api/driver/rides
-router.get('/rides', getRideHistory);
+router.get("/rides", getRideHistory);
 
 // GET  /api/driver/wallet
-router.get('/wallet', getWallet);
+router.get("/wallet", getWallet);
 
 // POST /api/driver/wallet/recharge
 router.post(
-  '/wallet/recharge',
+  "/wallet/recharge",
   rechargeWalletValidation,
   validateRequest,
-  rechargeWallet
+  rechargeWallet,
 );
 
 // PUT  /api/driver/fcm-token
 router.put(
-  '/fcm-token',
-  [body('fcmToken').notEmpty()],
+  "/fcm-token",
+  [body("fcmToken").notEmpty()],
   validateRequest,
-  updateFcmToken
+  updateFcmToken,
 );
 
 export default router;

@@ -17,7 +17,7 @@ const router = Router();
 // Stricter rate limit for OTP endpoints to prevent brute-force attacks
 const otpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5,
+  max: parseInt(process.env.OTP_MAX_ATTEMPTS || '5', 10),
   message: { success: false, message: 'Too many OTP requests. Try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
