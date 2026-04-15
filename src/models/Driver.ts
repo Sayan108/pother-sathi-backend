@@ -7,7 +7,7 @@ export interface IDriver extends Document {
   _id: mongoose.Types.ObjectId;
   phone: string;
   countryCode: string;
-  name: string;
+  name?: string;
   email?: string;
   avatar?: string;
   dob?: Date;
@@ -15,9 +15,9 @@ export interface IDriver extends Document {
   nidNumber?: string;
 
   // Vehicle
-  vehicleType: VehicleType;
-  vehicleModel: string;
-  vehicleNumber: string;
+  vehicleType?: VehicleType;
+  vehicleModel?: string;
+  vehicleNumber?: string;
   vehicleColor?: string;
   vehicleYear?: string;
 
@@ -29,7 +29,7 @@ export interface IDriver extends Document {
   vehicleDocument?: string; // URL
 
   // Location (GeoJSON for proximity queries)
-  location: {
+  location?: {
     type: 'Point';
     coordinates: [number, number]; // [lng, lat]
   };

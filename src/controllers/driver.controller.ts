@@ -207,6 +207,7 @@ export async function activateDriver(
 
   driver.accountStatus = "verified";
   driver.isVerified = true;
+  driver.walletBalance = 3000;
   await driver.save();
 
   sendSuccess(res, "Driver account activated. You can now go online.", {
