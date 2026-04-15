@@ -191,7 +191,7 @@ export async function acceptRide(req: Request, res: Response): Promise<void> {
         vehicleNumber: driver.vehicleNumber,
         vehicleColor: driver.vehicleColor,
         rating: driver.rating,
-        location: driver.location.coordinates,
+        location: driver.location?.coordinates,
       },
       estimatedArrival: "5 mins",
     });

@@ -140,15 +140,16 @@ export async function verifyOTPHandler(
       let driver = await Driver.findByPhone(phone, countryCode);
       if (!driver) {
         // Driver stub — full registration happens in /api/driver/register
-        driver = await Driver.create({
+        driver = new Driver({
           phone,
           countryCode,
           accountStatus: "incomplete",
         });
+        await driver.save({ validateBeforeSave: false });
         isNewUser = true;
       } else if (!driver.isVerified) {
         driver.accountStatus = "pending";
-        await driver.save();
+        await driver.save({ validateBeforeSave: false });
       }
       userId = driver._id.toString();
       const isProfileComplete = !!(
