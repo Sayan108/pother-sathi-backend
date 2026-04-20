@@ -8,8 +8,10 @@ import {
   activateDriver,
   getRideHistory,
   getWallet,
+  requestWalletRecharge,
   rechargeWallet,
   updateFcmToken,
+  createReferralCode,
   registerDriverValidation,
   locationUpdateValidation,
   rechargeWalletValidation,
@@ -40,6 +42,9 @@ router.get("/profile", getProfile);
 
 // PUT  /api/driver/profile
 router.put("/profile", validateRequest, updateProfile);
+
+// POST /api/driver/referral-code
+router.post("/referral-code", requireVerifiedDriver, createReferralCode);
 
 // Below routes require verified driver account:
 
@@ -76,6 +81,14 @@ router.post(
   rechargeWalletValidation,
   validateRequest,
   rechargeWallet,
+);
+
+// POST /api/driver/wallet/recharge-request
+router.post(
+  "/wallet/recharge-request",
+  rechargeWalletValidation,
+  validateRequest,
+  requestWalletRecharge,
 );
 
 // PUT  /api/driver/fcm-token

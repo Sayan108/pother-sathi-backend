@@ -2,12 +2,14 @@ import { Request, Response } from "express";
 import { body } from "express-validator";
 import { User } from "../models/User";
 import { Driver } from "../models/Driver";
+import { Transaction } from "../models/Transaction";
 import { sendOTP, verifyOTP } from "../services/otp.service";
 import {
   signAccessToken,
   signRefreshToken,
   verifyRefreshToken,
 } from "../utils/jwt";
+import { env } from "../config/environment";
 import {
   sendSuccess,
   sendCreated,
@@ -119,7 +121,23 @@ export async function verifyOTPHandler(
     if (role === "rider") {
       let user = await User.findByPhone(phone, countryCode);
       if (!user) {
-        user = await User.create({ phone, countryCode, isVerified: true });
+        user = await User.create({
+          phone,
+          countryCode,
+          role: "rider",
+          isVerified: true,
+          walletBalance: env.NEW_RIDER_WALLET_CREDIT,
+        });
+        await Transaction.create({
+          userId: user._id,
+          userModel: "User",
+          type: "wallet_recharge",
+          amount: env.NEW_RIDER_WALLET_CREDIT,
+          balanceBefore: 0,
+          balanceAfter: env.NEW_RIDER_WALLET_CREDIT,
+          description: "Welcome bonus credit for new rider account",
+          status: "completed",
+        });
         isNewUser = true;
       } else if (!user.isVerified) {
         user.isVerified = true;
@@ -134,6 +152,7 @@ export async function verifyOTPHandler(
         email: user.email,
         avatar: user.avatar,
         rating: user.rating,
+        walletBalance: user.walletBalance,
         profileStatus: isRiderProfileComplete ? "complete" : "partial",
       };
     } else {
@@ -145,7 +164,32 @@ export async function verifyOTPHandler(
           countryCode,
           accountStatus: "incomplete",
         });
-        await driver.save({ validateBeforeSave: false });
+        try {
+          await driver.save({ validateBeforeSave: false });
+        } catch (saveError) {
+          if ((saveError as any)?.name === "ValidationError") {
+            const insertResult = await Driver.collection.insertOne({
+              phone,
+              countryCode,
+              accountStatus: "incomplete",
+              isVerified: false,
+              isActive: true,
+              isOnline: false,
+              isAvailable: false,
+              walletBalance: 0,
+              totalEarnings: 0,
+              rating: 5.0,
+              totalRatings: 0,
+              totalRides: 0,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            } as any);
+            driver = await Driver.findById(insertResult.insertedId);
+            if (!driver) throw saveError;
+          } else {
+            throw saveError;
+          }
+        }
         isNewUser = true;
       } else if (!driver.isVerified) {
         driver.accountStatus = "pending";
@@ -163,6 +207,7 @@ export async function verifyOTPHandler(
         name: driver.name,
         avatar: driver.avatar,
         accountStatus: driver.accountStatus,
+        walletBalance: driver.walletBalance,
         profileStatus: isProfileComplete ? "complete" : "partial",
         isRegistered: isProfileComplete,
       };

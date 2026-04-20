@@ -1,8 +1,8 @@
-import { Request, Response, NextFunction } from 'express';
-import { verifyAccessToken, TokenPayload } from '../utils/jwt';
-import { sendUnauthorized, sendForbidden } from '../utils/response';
-import { User } from '../models/User';
-import { Driver } from '../models/Driver';
+import { Request, Response, NextFunction } from "express";
+import { verifyAccessToken, TokenPayload } from "../utils/jwt";
+import { sendUnauthorized, sendForbidden } from "../utils/response";
+import { User } from "../models/User";
+import { Driver } from "../models/Driver";
 
 // Augment Express Request
 declare global {
@@ -20,21 +20,21 @@ declare global {
 export async function authenticate(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    sendUnauthorized(res, 'No token provided');
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    sendUnauthorized(res, "No token provided");
     return;
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(" ")[1];
   try {
     const payload = verifyAccessToken(token);
     req.user = { ...payload, _id: payload.id };
     next();
   } catch {
-    sendUnauthorized(res, 'Invalid or expired token');
+    sendUnauthorized(res, "Invalid or expired token");
   }
 }
 
@@ -44,16 +44,16 @@ export async function authenticate(
 export async function requireRider(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
-  if (!req.user || req.user.role !== 'rider') {
-    sendForbidden(res, 'Access restricted to riders');
+  if (!req.user || req.user.role !== "rider") {
+    sendForbidden(res, "Access restricted to riders");
     return;
   }
   // Verify user still exists and is active
-  const user = await User.findById(req.user.id).select('isActive').lean();
+  const user = await User.findById(req.user.id).select("isActive").lean();
   if (!user || !user.isActive) {
-    sendForbidden(res, 'Account is inactive or deleted');
+    sendForbidden(res, "Account is inactive or deleted");
     return;
   }
   next();
@@ -65,19 +65,21 @@ export async function requireRider(
 export async function requireDriver(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
-  if (!req.user || req.user.role !== 'driver') {
-    sendForbidden(res, 'Access restricted to drivers');
+  if (!req.user || req.user.role !== "driver") {
+    sendForbidden(res, "Access restricted to drivers");
     return;
   }
-  const driver = await Driver.findById(req.user.id).select('isActive accountStatus').lean();
+  const driver = await Driver.findById(req.user.id)
+    .select("isActive accountStatus")
+    .lean();
   if (!driver || !driver.isActive) {
-    sendForbidden(res, 'Account is inactive or deleted');
+    sendForbidden(res, "Account is inactive or deleted");
     return;
   }
-  if (driver.accountStatus === 'suspended') {
-    sendForbidden(res, 'Your account has been suspended. Contact support.');
+  if (driver.accountStatus === "suspended") {
+    sendForbidden(res, "Your account has been suspended. Contact support.");
     return;
   }
   next();
@@ -89,21 +91,21 @@ export async function requireDriver(
 export async function requireVerifiedDriver(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
-  if (!req.user || req.user.role !== 'driver') {
-    sendForbidden(res, 'Access restricted to drivers');
+  if (!req.user || req.user.role !== "driver") {
+    sendForbidden(res, "Access restricted to drivers");
     return;
   }
   const driver = await Driver.findById(req.user.id)
-    .select('isActive accountStatus')
+    .select("isActive accountStatus")
     .lean();
   if (!driver || !driver.isActive) {
-    sendForbidden(res, 'Account is inactive or deleted');
+    sendForbidden(res, "Account is inactive or deleted");
     return;
   }
-  if (driver.accountStatus !== 'verified') {
-    sendForbidden(res, 'Account is pending verification');
+  if (driver.accountStatus !== "verified") {
+    sendForbidden(res, "Account is pending verification");
     return;
   }
   next();
@@ -112,4 +114,23 @@ export async function requireVerifiedDriver(
 /**
  * Allows both riders and drivers. Just validates the token.
  */
+export async function requireAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  if (!req.user || req.user.role !== "admin") {
+    sendForbidden(res, "Access restricted to admins");
+    return;
+  }
+
+  const user = await User.findById(req.user.id).select("isActive role").lean();
+  if (!user || !user.isActive || user.role !== "admin") {
+    sendForbidden(res, "Admin access required");
+    return;
+  }
+
+  next();
+}
+
 export const authenticateAny = authenticate;

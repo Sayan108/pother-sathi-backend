@@ -4,7 +4,7 @@ import { env } from "../config/environment";
 export type TokenPayload = {
   id: string;
   phone: string;
-  role: "rider" | "driver";
+  role: "rider" | "driver" | "admin";
 };
 
 export type RefreshTokenPayload = TokenPayload & { tokenVersion?: number };

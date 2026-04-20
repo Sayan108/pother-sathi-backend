@@ -2,7 +2,9 @@ import { Server as SocketServer } from "socket.io";
 import { Ride } from "../models/Ride";
 import { User } from "../models/User";
 import { AuthenticatedSocket } from "./socket.middleware";
+import { driverSocketMap } from "./driver.socket";
 import { riderSocketMap } from "../controllers/ride.controller";
+import { env } from "../config/environment";
 import { logger } from "../utils/logger";
 
 export function registerRiderSocketHandlers(
@@ -40,25 +42,37 @@ export function registerRiderSocketHandlers(
         drop.lng,
       );
       const fareBreakdown = calculateFare(distanceKm, vehicleType, couponCode);
-      // Find available drivers (seed drivers for dev)
-      const seedPhones = [
-        "9000000001",
-        "9000000002",
-        "9000000003",
-        "9000000004",
-        "9000000005",
-      ];
       const { Driver } = require("../models/Driver");
-      const seedDrivers = await Driver.find({
-        phone: { $in: seedPhones },
+      let availableDrivers = await Driver.find({
         vehicleType,
         accountStatus: "verified",
         isActive: true,
+        isOnline: true,
+        isAvailable: true,
       }).lean();
+
+      if (!availableDrivers.length && env.DEV_SEED_ACTIVE_DRIVERS) {
+        const seedPhones = [
+          "9000000001",
+          "9000000002",
+          "9000000003",
+          "9000000004",
+          "9000000005",
+        ];
+        availableDrivers = await Driver.find({
+          phone: { $in: seedPhones },
+          vehicleType,
+          accountStatus: "verified",
+          isActive: true,
+          isOnline: true,
+          isAvailable: true,
+        }).lean();
+      }
+
       cb({
         success: true,
         fareBreakdown,
-        availableDrivers: seedDrivers.map((d:any) => ({
+        availableDrivers: availableDrivers.map((d: any) => ({
           _id: d._id,
           name: d.name,
           phone: d.phone,
@@ -127,26 +141,36 @@ export function registerRiderSocketHandlers(
         drop.lng,
       );
       const fareBreakdown = calculateFare(distanceKm, vehicleType, couponCode);
-      // Assign random seed driver
-      const seedPhones = [
-        "9000000001",
-        "9000000002",
-        "9000000003",
-        "9000000004",
-        "9000000005",
-      ];
-      const seedDrivers = await Driver.find({
-        phone: { $in: seedPhones },
+      const driverFilter = {
         vehicleType,
         accountStatus: "verified",
         isActive: true,
-      }).lean();
-      if (!seedDrivers.length) {
+        isOnline: true,
+        isAvailable: true,
+      };
+
+      let availableDrivers = await Driver.find(driverFilter).lean();
+      if (!availableDrivers.length && env.DEV_SEED_ACTIVE_DRIVERS) {
+        const seedPhones = [
+          "9000000001",
+          "9000000002",
+          "9000000003",
+          "9000000004",
+          "9000000005",
+        ];
+        availableDrivers = await Driver.find({
+          ...driverFilter,
+          phone: { $in: seedPhones },
+        }).lean();
+      }
+
+      if (!availableDrivers.length) {
         cb({ success: false, error: "No drivers available" });
         return;
       }
+
       const assignedDriver =
-        seedDrivers[Math.floor(Math.random() * seedDrivers.length)];
+        availableDrivers[Math.floor(Math.random() * availableDrivers.length)];
       const otp = Math.floor(1000 + Math.random() * 9000).toString();
       const ride = await Ride.create({
         riderId,
@@ -166,9 +190,13 @@ export function registerRiderSocketHandlers(
         status: "driver_assigned",
         driverAssignedAt: new Date(),
       });
-      // Notify driver if online
-      if (assignedDriver.socketId) {
-        io.to(assignedDriver.socketId).emit("ride:assigned", {
+
+      // Notify driver if online. Prefer the in-memory socket map, fallback to DB socketId.
+      const assignedDriverId = assignedDriver._id.toString();
+      const driverSocketId =
+        driverSocketMap.get(assignedDriverId) || assignedDriver.socketId;
+      if (driverSocketId) {
+        io.to(driverSocketId).emit("ride:assigned", {
           rideId: ride._id,
           pickup,
           drop,

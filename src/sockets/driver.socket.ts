@@ -9,18 +9,18 @@ import { logger } from "../utils/logger";
 // For production, use Redis
 export const driverSocketMap = new Map<string, string>();
 
-export function registerDriverSocketHandlers(
+export async function registerDriverSocketHandlers(
   io: SocketServer,
   socket: AuthenticatedSocket,
-): void {
+): Promise<void> {
   const driverId = socket.userId;
 
   // Join driver-specific room
   socket.join(`driver:${driverId}`);
 
-  // Register socket ID in maps and DB
+  // Register socket ID in memory and persist it to the driver record.
   driverSocketMap.set(driverId, socket.id);
-  Driver.findByIdAndUpdate(driverId, { socketId: socket.id }).exec();
+  await Driver.findByIdAndUpdate(driverId, { socketId: socket.id }).exec();
 
   logger.debug(`Driver ${driverId} connected [socket: ${socket.id}]`);
 

@@ -1,18 +1,20 @@
-import mongoose, { Document, Schema, Model } from 'mongoose';
-import bcrypt from 'bcryptjs';
+import mongoose, { Document, Schema, Model } from "mongoose";
+import bcrypt from "bcryptjs";
 
 export interface IUser extends Document {
   _id: mongoose.Types.ObjectId;
   phone: string;
   countryCode: string;
+  role: "rider" | "admin";
   name?: string;
   email?: string;
   avatar?: string;
   dob?: Date;
-  gender?: 'male' | 'female' | 'other';
+  gender?: "male" | "female" | "other";
   rating: number;
   totalRatings: number;
   totalRides: number;
+  walletBalance: number;
   isActive: boolean;
   isVerified: boolean;
   fcmToken?: string;
@@ -32,31 +34,37 @@ const userSchema = new Schema<IUser>(
       required: true,
       unique: true,
       trim: true,
-      match: [/^\d{10,15}$/, 'Invalid phone number'],
+      match: [/^\d{10,15}$/, "Invalid phone number"],
     },
     countryCode: {
       type: String,
-      default: '+91',
+      default: "+91",
       trim: true,
+    },
+    role: {
+      type: String,
+      enum: ["rider", "admin"],
+      default: "rider",
     },
     name: {
       type: String,
       trim: true,
-      maxlength: [100, 'Name cannot exceed 100 characters'],
+      maxlength: [100, "Name cannot exceed 100 characters"],
     },
     email: {
       type: String,
       trim: true,
       lowercase: true,
       sparse: true,
-      match: [/^\S+@\S+\.\S+$/, 'Invalid email address'],
+      match: [/^\S+@\S+\.\S+$/, "Invalid email address"],
     },
     avatar: { type: String },
     dob: { type: Date },
-    gender: { type: String, enum: ['male', 'female', 'other'] },
+    gender: { type: String, enum: ["male", "female", "other"] },
     rating: { type: Number, default: 5.0, min: 0, max: 5 },
     totalRatings: { type: Number, default: 0 },
     totalRides: { type: Number, default: 0 },
+    walletBalance: { type: Number, default: 0, min: 0 },
     isActive: { type: Boolean, default: true },
     isVerified: { type: Boolean, default: false },
     fcmToken: { type: String },
@@ -64,14 +72,14 @@ const userSchema = new Schema<IUser>(
   {
     timestamps: true,
     versionKey: false,
-  }
+  },
 );
 
 userSchema.index({ email: 1 }, { sparse: true });
 
 userSchema.statics.findByPhone = function (
   phone: string,
-  countryCode = '+91'
+  countryCode = "+91",
 ): Promise<IUser | null> {
   return this.findOne({ phone, countryCode });
 };
@@ -87,4 +95,4 @@ userSchema.methods.toJSON = function () {
   return obj;
 };
 
-export const User = mongoose.model<IUser, IUserModel>('User', userSchema);
+export const User = mongoose.model<IUser, IUserModel>("User", userSchema);

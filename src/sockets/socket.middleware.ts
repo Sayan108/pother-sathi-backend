@@ -1,15 +1,15 @@
-import { Server as SocketServer, Socket } from 'socket.io';
-import { verifyAccessToken } from '../utils/jwt';
-import { Driver } from '../models/Driver';
-import { User } from '../models/User';
-import { logger } from '../utils/logger';
+import { Server as SocketServer, Socket } from "socket.io";
+import { verifyAccessToken } from "../utils/jwt";
+import { Driver } from "../models/Driver";
+import { User } from "../models/User";
+import { logger } from "../utils/logger";
 
 /**
  * Authenticated socket payload after JWT verification.
  */
 export interface AuthenticatedSocket extends Socket {
   userId: string;
-  role: 'rider' | 'driver';
+  role: "rider" | "driver" | "admin";
   phone: string;
 }
 
@@ -19,14 +19,14 @@ export interface AuthenticatedSocket extends Socket {
  */
 export async function socketAuthMiddleware(
   socket: Socket,
-  next: (err?: Error) => void
+  next: (err?: Error) => void,
 ): Promise<void> {
   const token =
     (socket.handshake.auth.token as string) ||
     (socket.handshake.query.token as string);
 
   if (!token) {
-    return next(new Error('Authentication required'));
+    return next(new Error("Authentication required"));
   }
 
   try {
@@ -37,6 +37,6 @@ export async function socketAuthMiddleware(
     authSocket.phone = payload.phone;
     next();
   } catch {
-    next(new Error('Invalid or expired token'));
+    next(new Error("Invalid or expired token"));
   }
 }

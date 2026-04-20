@@ -3,6 +3,8 @@ import { body } from "express-validator";
 import { Driver, VehicleType, IDriver } from "../models/Driver";
 import { Ride } from "../models/Ride";
 import { Transaction } from "../models/Transaction";
+import { RechargeRequest } from "../models/RechargeRequest";
+import { env } from "../config/environment";
 import {
   sendSuccess,
   sendCreated,
@@ -11,7 +13,6 @@ import {
   sendForbidden,
   sendConflict,
 } from "../utils/response";
-import { env } from "../config/environment";
 import { logger } from "../utils/logger";
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -56,6 +57,12 @@ export const registerDriverValidation = [
     .trim()
     .isURL()
     .withMessage("vehicleDocument must be a valid URL"),
+  body("referralCode")
+    .optional()
+    .trim()
+    .toUpperCase()
+    .isAlphanumeric()
+    .withMessage("Referral code must be alphanumeric"),
 ];
 
 export const locationUpdateValidation = [
@@ -148,6 +155,37 @@ export async function registerDriver(
   if (avatar) driver.avatar = avatar;
   driver.accountStatus = "pending";
 
+  if (req.body.referralCode) {
+    const referralCode = (req.body.referralCode as string).toUpperCase();
+    const unionLeader = await Driver.findOne({
+      referralCode,
+      isUnionLeader: true,
+      accountStatus: "verified",
+    });
+
+    if (!unionLeader) {
+      sendError(res, "Invalid referral code", 400);
+      return;
+    }
+
+    if (!unionLeader._id.equals(driver._id)) {
+      driver.referredBy = unionLeader._id;
+      unionLeader.walletBalance += env.DRIVER_REFERRAL_BONUS;
+      unionLeader.referralCount = (unionLeader.referralCount || 0) + 1;
+      await unionLeader.save();
+      await Transaction.create({
+        userId: unionLeader._id,
+        userModel: "Driver",
+        type: "referral_bonus",
+        amount: env.DRIVER_REFERRAL_BONUS,
+        balanceBefore: unionLeader.walletBalance - env.DRIVER_REFERRAL_BONUS,
+        balanceAfter: unionLeader.walletBalance,
+        description: `Referral bonus for ${driver.phone}`,
+        status: "completed",
+      });
+    }
+  }
+
   await driver.save();
 
   sendSuccess(
@@ -156,6 +194,7 @@ export async function registerDriver(
     {
       accountStatus: driver.accountStatus,
       id: driver._id,
+      referredBy: driver.referredBy,
     },
   );
 }
@@ -170,6 +209,48 @@ function hasDriverDocuments(driver: IDriver) {
     driver.licenseDocument &&
     driver.vehicleDocument
   );
+}
+
+function generateReferralCode(driverId: string): string {
+  const shortId = driverId.slice(-6).toUpperCase();
+  const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `UL${shortId}${randomSuffix}`;
+}
+
+/**
+ * POST /api/driver/referral-code
+ * Generate or return the driver's union leader referral code.
+ */
+export async function createReferralCode(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const driver = await Driver.findById(req.user!.id);
+  if (!driver) {
+    sendNotFound(res, "Driver not found");
+    return;
+  }
+  if (driver.accountStatus !== "verified") {
+    sendForbidden(res, "Only verified drivers can become union leaders");
+    return;
+  }
+
+  if (!driver.referralCode) {
+    let code = generateReferralCode(driver._id.toString());
+    let exists = await Driver.findOne({ referralCode: code }).lean();
+    while (exists) {
+      code = generateReferralCode(driver._id.toString());
+      exists = await Driver.findOne({ referralCode: code }).lean();
+    }
+    driver.referralCode = code;
+  }
+
+  driver.isUnionLeader = true;
+  await driver.save();
+
+  sendSuccess(res, "Referral code created", {
+    referralCode: driver.referralCode,
+  });
 }
 
 /**
@@ -385,6 +466,41 @@ export async function getWallet(req: Request, res: Response): Promise<void> {
     200,
     { page, limit, total, totalPages: Math.ceil(total / limit) },
   );
+}
+
+/**
+ * POST /api/driver/wallet/recharge-request
+ * Creates a driver wallet recharge request that must be approved by an admin.
+ */
+export async function requestWalletRecharge(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { amount, paymentReference } = req.body as {
+    amount: number;
+    paymentReference?: string;
+  };
+
+  const driver = await Driver.findById(req.user!.id);
+  if (!driver) {
+    sendNotFound(res, "Driver not found");
+    return;
+  }
+
+  const rechargeRequest = await RechargeRequest.create({
+    driverId: driver._id,
+    amount,
+    paymentReference,
+    status: "pending",
+    description: `Recharge request for ₹${amount}`,
+  });
+
+  sendSuccess(res, "Recharge request submitted for approval", {
+    requestId: rechargeRequest._id,
+    status: rechargeRequest.status,
+    amount: rechargeRequest.amount,
+    paymentReference: rechargeRequest.paymentReference,
+  });
 }
 
 /**

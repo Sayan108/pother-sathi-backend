@@ -12,6 +12,7 @@ import authRoutes from "./routes/auth.routes";
 import riderRoutes from "./routes/rider.routes";
 import driverRoutes from "./routes/driver.routes";
 import rideRoutes from "./routes/ride.routes";
+import adminRoutes from "./routes/admin.routes";
 
 export function createApp(): Application {
   const app = express();
@@ -33,18 +34,20 @@ export function createApp(): Application {
   );
 
   // Global rate limiter (skip in test environment)
-  if (env.NODE_ENV !== 'test') {
+  if (env.NODE_ENV !== "test") {
     app.use(
       rateLimit({
         windowMs: 15 * 60 * 1000, // 15 minutes
         max: 100,
         standardHeaders: true,
         legacyHeaders: false,
-        message: { success: false, message: 'Too many requests. Please try again later.' },
+        message: {
+          success: false,
+          message: "Too many requests. Please try again later.",
+        },
       }),
     );
   }
-
 
   // ── Parsing ───────────────────────────────────────────────────────────────────
   app.use(express.json({ limit: "1mb" }));
@@ -83,6 +86,7 @@ export function createApp(): Application {
   app.use("/api/auth", authRoutes);
   app.use("/api/rider", riderRoutes);
   app.use("/api/driver", driverRoutes);
+  app.use("/api/admin", adminRoutes);
   app.use("/api/rides", rideRoutes);
 
   // ── 404 & Error Handling ──────────────────────────────────────────────────────

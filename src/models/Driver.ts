@@ -1,7 +1,12 @@
-import mongoose, { Document, Schema, Model } from 'mongoose';
+import mongoose, { Document, Schema, Model } from "mongoose";
 
-export type VehicleType = 'bike' | 'auto' | 'toto' | 'car' | 'delivery';
-export type DriverStatus = 'incomplete' | 'pending' | 'verified' | 'rejected' | 'suspended';
+export type VehicleType = "bike" | "auto" | "toto" | "car" | "delivery";
+export type DriverStatus =
+  | "incomplete"
+  | "pending"
+  | "verified"
+  | "rejected"
+  | "suspended";
 
 export interface IDriver extends Document {
   _id: mongoose.Types.ObjectId;
@@ -11,7 +16,7 @@ export interface IDriver extends Document {
   email?: string;
   avatar?: string;
   dob?: Date;
-  gender?: 'male' | 'female' | 'other';
+  gender?: "male" | "female" | "other";
   nidNumber?: string;
 
   // Vehicle
@@ -24,13 +29,13 @@ export interface IDriver extends Document {
   // Documents
   licenseNumber?: string;
   licenseExpiry?: Date;
-  nidDocument?: string;   // URL
+  nidDocument?: string; // URL
   licenseDocument?: string; // URL
   vehicleDocument?: string; // URL
 
   // Location (GeoJSON for proximity queries)
   location?: {
-    type: 'Point';
+    type: "Point";
     coordinates: [number, number]; // [lng, lat]
   };
   serviceArea?: string;
@@ -41,6 +46,12 @@ export interface IDriver extends Document {
   isAvailable: boolean;
   currentRideId?: mongoose.Types.ObjectId;
   fcmToken?: string;
+
+  // Referral
+  isUnionLeader?: boolean;
+  referralCode?: string;
+  referredBy?: mongoose.Types.ObjectId;
+  referralCount?: number;
 
   // Finance
   walletBalance: number;
@@ -66,7 +77,7 @@ export interface IDriverModel extends Model<IDriver> {
     lat: number,
     lng: number,
     radiusKm: number,
-    vehicleType?: VehicleType
+    vehicleType?: VehicleType,
   ): Promise<IDriver[]>;
 }
 
@@ -77,25 +88,25 @@ const driverSchema = new Schema<IDriver>(
       required: true,
       unique: true,
       trim: true,
-      match: [/^\d{10,15}$/, 'Invalid phone number'],
+      match: [/^\d{10,15}$/, "Invalid phone number"],
     },
-    countryCode: { type: String, default: '+91' },
+    countryCode: { type: String, default: "+91" },
     name: { type: String, trim: true },
     email: {
       type: String,
       trim: true,
       lowercase: true,
       sparse: true,
-      match: [/^\S+@\S+\.\S+$/, 'Invalid email'],
+      match: [/^\S+@\S+\.\S+$/, "Invalid email"],
     },
     avatar: { type: String },
     dob: { type: Date },
-    gender: { type: String, enum: ['male', 'female', 'other'] },
+    gender: { type: String, enum: ["male", "female", "other"] },
     nidNumber: { type: String },
 
     vehicleType: {
       type: String,
-      enum: ['bike', 'auto', 'toto', 'car', 'delivery'],
+      enum: ["bike", "auto", "toto", "car", "delivery"],
     },
     vehicleModel: { type: String },
     vehicleNumber: { type: String, uppercase: true },
@@ -111,8 +122,8 @@ const driverSchema = new Schema<IDriver>(
     location: {
       type: {
         type: String,
-        enum: ['Point'],
-        default: 'Point',
+        enum: ["Point"],
+        default: "Point",
       },
       coordinates: {
         type: [Number],
@@ -123,14 +134,25 @@ const driverSchema = new Schema<IDriver>(
 
     accountStatus: {
       type: String,
-      enum: [  'incomplete', 'pending', 'verified', 'rejected', 'suspended'],
-      default: 'incomplete',
+      enum: ["incomplete", "pending", "verified", "rejected", "suspended"],
+      default: "incomplete",
     },
     isOnline: { type: Boolean, default: false },
     isAvailable: { type: Boolean, default: false },
-    currentRideId: { type: Schema.Types.ObjectId, ref: 'Ride' },
+    currentRideId: { type: Schema.Types.ObjectId, ref: "Ride" },
     fcmToken: { type: String },
     socketId: { type: String },
+
+    isUnionLeader: { type: Boolean, default: false },
+    referralCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      uppercase: true,
+      trim: true,
+    },
+    referredBy: { type: Schema.Types.ObjectId, ref: "Driver" },
+    referralCount: { type: Number, default: 0 },
 
     walletBalance: { type: Number, default: 0, min: 0 },
     totalEarnings: { type: Number, default: 0 },
@@ -145,15 +167,15 @@ const driverSchema = new Schema<IDriver>(
   {
     timestamps: true,
     versionKey: false,
-  }
+  },
 );
 
-driverSchema.index({ location: '2dsphere' });
+driverSchema.index({ location: "2dsphere" });
 driverSchema.index({ isOnline: 1, isAvailable: 1, accountStatus: 1 });
 
 driverSchema.statics.findByPhone = function (
   phone: string,
-  countryCode = '+91'
+  countryCode = "+91",
 ): Promise<IDriver | null> {
   return this.findOne({ phone, countryCode });
 };
@@ -162,18 +184,18 @@ driverSchema.statics.findNearby = function (
   lat: number,
   lng: number,
   radiusKm: number,
-  vehicleType?: VehicleType
+  vehicleType?: VehicleType,
 ): Promise<IDriver[]> {
   const query: Record<string, unknown> = {
     location: {
       $near: {
-        $geometry: { type: 'Point', coordinates: [lng, lat] },
+        $geometry: { type: "Point", coordinates: [lng, lat] },
         $maxDistance: radiusKm * 1000,
       },
     },
     isOnline: true,
     isAvailable: true,
-    accountStatus: 'verified',
+    accountStatus: "verified",
   };
   if (vehicleType) query.vehicleType = vehicleType;
   return this.find(query).limit(10).exec();
@@ -186,4 +208,7 @@ driverSchema.methods.toJSON = function () {
   return obj;
 };
 
-export const Driver = mongoose.model<IDriver, IDriverModel>('Driver', driverSchema);
+export const Driver = mongoose.model<IDriver, IDriverModel>(
+  "Driver",
+  driverSchema,
+);

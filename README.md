@@ -4,17 +4,17 @@ Full-featured **Node.js + TypeScript** backend for the Pather Sathi ride-sharing
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Runtime | Node.js 18+ |
-| Framework | Express.js |
-| Language | TypeScript |
-| Database | MongoDB + Mongoose |
-| Real-time | Socket.io |
-| Auth | JWT (access + refresh tokens) |
-| OTP | Twilio SMS / Demo mode |
-| Security | Helmet, CORS, rate-limit, bcrypt |
-| Logging | Winston |
+| Layer     | Technology                       |
+| --------- | -------------------------------- |
+| Runtime   | Node.js 18+                      |
+| Framework | Express.js                       |
+| Language  | TypeScript                       |
+| Database  | MongoDB + Mongoose               |
+| Real-time | Socket.io                        |
+| Auth      | JWT (access + refresh tokens)    |
+| OTP       | Twilio SMS / Demo mode           |
+| Security  | Helmet, CORS, rate-limit, bcrypt |
+| Logging   | Winston                          |
 
 ---
 
@@ -101,86 +101,99 @@ The server starts on `http://localhost:5000`.
 
 ### Auth
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/auth/send-otp` | Send OTP to phone |
-| POST | `/api/auth/verify-otp` | Verify OTP → JWT tokens |
-| POST | `/api/auth/refresh` | Refresh access token |
-| POST | `/api/auth/logout` | Logout (client-side) |
+| Method | Endpoint               | Description             |
+| ------ | ---------------------- | ----------------------- |
+| POST   | `/api/auth/send-otp`   | Send OTP to phone       |
+| POST   | `/api/auth/verify-otp` | Verify OTP → JWT tokens |
+| POST   | `/api/auth/refresh`    | Refresh access token    |
+| POST   | `/api/auth/logout`     | Logout (client-side)    |
 
 ### Rider
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/rider/profile` | Get rider profile |
-| PUT | `/api/rider/profile` | Update profile |
-| GET | `/api/rider/rides` | Ride history (paginated) |
-| GET | `/api/rider/rides/:rideId` | Single ride details |
-| PUT | `/api/rider/fcm-token` | Update push notification token |
+| Method | Endpoint                   | Description                    |
+| ------ | -------------------------- | ------------------------------ |
+| GET    | `/api/rider/profile`       | Get rider profile              |
+| PUT    | `/api/rider/profile`       | Update profile                 |
+| GET    | `/api/rider/rides`         | Ride history (paginated)       |
+| GET    | `/api/rider/rides/:rideId` | Single ride details            |
+| PUT    | `/api/rider/fcm-token`     | Update push notification token |
 
 ### Driver
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/driver/register` | Complete multi-step registration |
-| GET | `/api/driver/profile` | Get driver profile |
-| PUT | `/api/driver/profile` | Update profile |
-| PATCH | `/api/driver/online-status` | Toggle online/offline |
-| PATCH | `/api/driver/location` | Update GPS location |
-| GET | `/api/driver/rides` | Ride history |
-| GET | `/api/driver/wallet` | Wallet balance + transactions |
-| POST | `/api/driver/wallet/recharge` | Recharge wallet |
+| Method | Endpoint                      | Description                      |
+| ------ | ----------------------------- | -------------------------------- |
+| POST   | `/api/driver/register`        | Complete multi-step registration |
+| GET    | `/api/driver/profile`         | Get driver profile               |
+| PUT    | `/api/driver/profile`         | Update profile                   |
+| PATCH  | `/api/driver/online-status`   | Toggle online/offline            |
+| PATCH  | `/api/driver/location`        | Update GPS location              |
+| GET    | `/api/driver/rides`           | Ride history                     |
+| GET    | `/api/driver/wallet`          | Wallet balance + transactions    |
+| POST   | `/api/driver/wallet/recharge` | Recharge wallet                  |
 
 ### Rides
 
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| GET | `/api/rides/fare-estimate` | Any | Estimate fare |
-| POST | `/api/rides/book` | Rider | Book a ride |
-| GET | `/api/rides/active` | Any | Current active ride |
-| GET | `/api/rides/:rideId` | Rider/Driver | Ride details |
-| POST | `/api/rides/:rideId/accept` | Driver | Accept ride request |
-| POST | `/api/rides/:rideId/arrived` | Driver | Mark driver arrived |
-| POST | `/api/rides/:rideId/verify-otp` | Driver | Verify rider OTP |
-| POST | `/api/rides/:rideId/complete` | Driver | Complete ride |
-| POST | `/api/rides/:rideId/cancel` | Rider/Driver | Cancel ride |
-| POST | `/api/rides/:rideId/rate` | Rider/Driver | Rate the ride |
+| Method | Endpoint                        | Auth         | Description         |
+| ------ | ------------------------------- | ------------ | ------------------- |
+| GET    | `/api/rides/fare-estimate`      | Any          | Estimate fare       |
+| POST   | `/api/rides/book`               | Rider        | Book a ride         |
+| GET    | `/api/rides/active`             | Any          | Current active ride |
+| GET    | `/api/rides/:rideId`            | Rider/Driver | Ride details        |
+| POST   | `/api/rides/:rideId/accept`     | Driver       | Accept ride request |
+| POST   | `/api/rides/:rideId/arrived`    | Driver       | Mark driver arrived |
+| POST   | `/api/rides/:rideId/verify-otp` | Driver       | Verify rider OTP    |
+| POST   | `/api/rides/:rideId/complete`   | Driver       | Complete ride       |
+| POST   | `/api/rides/:rideId/cancel`     | Rider/Driver | Cancel ride         |
+| POST   | `/api/rides/:rideId/rate`       | Rider/Driver | Rate the ride       |
 
 ---
 
 ## Socket.io Events
 
+Detailed Socket.IO event documentation is available in [`SOCKET_EVENTS.md`](./SOCKET_EVENTS.md).
+
 ### Client → Server
 
-| Event | Payload | Description |
-|---|---|---|
-| `driver:location_update` | `{ lat, lng, rideId? }` | Driver GPS update |
-| `driver:reject_ride` | `{ rideId }` | Driver rejects request |
-| `rider:cancel_search` | `{ rideId }` | Cancel searching ride |
-| `rider:ping` | — | Heartbeat |
+| Event                    | Payload                                                      | Description                              |
+| ------------------------ | ------------------------------------------------------------ | ---------------------------------------- |
+| `ride:search`            | `{ pickup, drop, vehicleType, couponCode? }`                 | Estimate fare and list available drivers |
+| `ride:book`              | `{ pickup, drop, vehicleType, couponCode?, paymentMethod? }` | Book a ride and assign a driver          |
+| `ride:cancel`            | `{ rideId, reason? }`                                        | Cancel an active ride                    |
+| `rider:cancel_search`    | `{ rideId }`                                                 | Cancel a ride that is still searching    |
+| `rider:ping`             | —                                                            | Heartbeat check                          |
+| `ride:accept`            | `{ rideId }`                                                 | Driver accepts a searching ride          |
+| `ride:arrived`           | `{ rideId }`                                                 | Driver arrives at pickup                 |
+| `ride:verify_otp`        | `{ rideId, otp }`                                            | Driver verifies the ride OTP             |
+| `ride:complete`          | `{ rideId }`                                                 | Driver completes the ride                |
+| `ride:cancel`            | `{ rideId, reason? }`                                        | Driver cancels an assigned ride          |
+| `driver:location_update` | `{ lat, lng, rideId? }`                                      | Driver location updates                  |
+| `driver:reject_ride`     | `{ rideId }`                                                 | Driver rejects a ride request            |
 
 ### Server → Client
 
-| Event | Payload | Description |
-|---|---|---|
-| `ride:new_request` | `{ rideId, pickup, drop, fare, ... }` | New ride for driver |
-| `ride:driver_assigned` | `{ rideId, driver }` | Driver accepted |
-| `ride:driver_arrived` | `{ rideId }` | Driver at pickup |
-| `ride:started` | `{ rideId }` | OTP verified, ride started |
-| `ride:completed` | `{ rideId, fare }` | Ride done |
-| `ride:cancelled` | `{ rideId, cancelledBy }` | Ride cancelled |
-| `ride:driver_cancelled` | `{ rideId }` | Driver cancelled |
-| `driver:location` | `{ lat, lng, rideId }` | Driver live location → rider |
-| `rider:pong` | `{ timestamp }` | Heartbeat reply |
+| Event                   | Payload                                | Description                          |
+| ----------------------- | -------------------------------------- | ------------------------------------ |
+| `ride:assigned`         | `{ rideId, pickup, drop, riderId }`    | Ride assigned to driver              |
+| `ride:driver_assigned`  | `{ rideId, driver, estimatedArrival }` | Driver assigned to rider             |
+| `ride:driver_arrived`   | `{ rideId }`                           | Driver has arrived                   |
+| `ride:started`          | `{ rideId }`                           | Ride started after OTP verification  |
+| `ride:completed`        | `{ rideId, fare, paymentMethod }`      | Ride completed successfully          |
+| `ride:cancelled`        | `{ rideId, cancelledBy, reason? }`     | Ride canceled                        |
+| `ride:driver_cancelled` | `{ rideId, cancelledBy, reason? }`     | Driver canceled ride                 |
+| `driver:location`       | `{ lat, lng, rideId }`                 | Live driver location update to rider |
+| `rider:pong`            | `{ timestamp }`                        | Heartbeat response                   |
 
 ### Authentication
 
-Connect with JWT token:
+Connections require a valid JWT access token in `auth.token`:
+
 ```javascript
-const socket = io('http://localhost:5000', {
-  auth: { token: 'YOUR_JWT_ACCESS_TOKEN' }
+const socket = io("http://localhost:5000", {
+  auth: { token: "YOUR_JWT_ACCESS_TOKEN" },
 });
 ```
+
+For full Socket.IO event documentation and test coverage results, see `SOCKET_EVENTS.md` and `SOCKET_TEST_REPORT.md`.
 
 ---
 

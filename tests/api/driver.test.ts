@@ -393,6 +393,21 @@ describe("POST /api/driver/wallet/recharge", () => {
   });
 });
 
+describe("POST /api/driver/wallet/recharge-request", () => {
+  it("should create a pending recharge request with valid amount and payment reference", async () => {
+    const res = await request(app)
+      .post("/api/driver/wallet/recharge-request")
+      .set("Authorization", `Bearer ${verifiedDriverToken}`)
+      .send({ amount: 500, paymentReference: "1234" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toHaveProperty("requestId");
+    expect(res.body.data).toHaveProperty("status", "pending");
+    expect(res.body.data).toHaveProperty("amount", 500);
+  });
+});
+
 // ── PUT /api/driver/fcm-token ──────────────────────────────────────────────────
 
 describe("PUT /api/driver/fcm-token", () => {
