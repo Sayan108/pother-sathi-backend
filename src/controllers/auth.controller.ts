@@ -226,6 +226,7 @@ export async function verifyOTPHandler(
         refreshToken,
         role,
         isNewUser,
+        walletBalance: userData.walletBalance,
         user: userData,
       },
     });

@@ -173,13 +173,52 @@ export async function registerDriverSocketHandlers(
         cb({ success: false, error: "Active ride not found" });
         return;
       }
-      ride.status = "completed";
-      ride.completedAt = new Date();
-      ride.isPaid = ride.paymentMethod === "cash";
-      await ride.save();
-      // Credit driver's wallet (subtract platform fee)
+
       const { Driver } = require("../models/Driver");
       const { Transaction } = require("../models/Transaction");
+      let rider: any;
+
+      if (ride.paymentMethod === "wallet") {
+        const { User } = require("../models/User");
+        rider = await User.findById(ride.riderId);
+        if (!rider) {
+          cb({ success: false, error: "Rider account not found" });
+          return;
+        }
+
+        if (rider.walletBalance < ride.fare) {
+          cb({
+            success: false,
+            error: "Insufficient rider wallet balance to complete the ride",
+          });
+          return;
+        }
+
+        const balanceBefore = rider.walletBalance;
+        rider.walletBalance -= ride.fare;
+        await rider.save();
+
+        await Transaction.create({
+          userId: rider._id,
+          userModel: "User",
+          type: "ride_payment",
+          amount: -ride.fare,
+          balanceBefore,
+          balanceAfter: rider.walletBalance,
+          rideId: ride._id,
+          description: `Ride payment for ${ride.pickup.address || "pickup"} to ${ride.drop.address || "drop"}`,
+          status: "completed",
+        });
+
+        ride.isPaid = true;
+      } else {
+        ride.isPaid = ride.paymentMethod === "cash";
+      }
+
+      ride.status = "completed";
+      ride.completedAt = new Date();
+      await ride.save();
+
       const driver = await Driver.findById(driverId);
       if (driver) {
         const balanceBefore = driver.walletBalance;
@@ -216,9 +255,11 @@ export async function registerDriverSocketHandlers(
           },
         ]);
       }
+
       // Update rider's total rides
       const { User } = require("../models/User");
       await User.findByIdAndUpdate(ride.riderId, { $inc: { totalRides: 1 } });
+
       // Notify rider
       const { riderSocketMap } = require("../controllers/ride.controller");
       const riderSocketId = riderSocketMap.get(ride.riderId.toString());
@@ -229,6 +270,7 @@ export async function registerDriverSocketHandlers(
           paymentMethod: ride.paymentMethod,
         });
       }
+
       cb({
         success: true,
         rideId: ride._id,

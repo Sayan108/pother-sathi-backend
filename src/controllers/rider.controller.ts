@@ -1,22 +1,22 @@
-import { Request, Response } from 'express';
-import { body } from 'express-validator';
-import { User } from '../models/User';
-import { Ride } from '../models/Ride';
-import { Transaction } from '../models/Transaction';
+import { Request, Response } from "express";
+import { body } from "express-validator";
+import { User } from "../models/User";
+import { Ride } from "../models/Ride";
+import { Transaction } from "../models/Transaction";
 import {
   sendSuccess,
   sendError,
   sendNotFound,
   sendForbidden,
-} from '../utils/response';
+} from "../utils/response";
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 export const updateProfileValidation = [
-  body('name').optional().trim().isLength({ min: 2, max: 100 }),
-  body('email').optional().trim().isEmail().normalizeEmail(),
-  body('gender').optional().isIn(['male', 'female', 'other']),
-  body('dob').optional().isISO8601().toDate(),
+  body("name").optional().trim().isLength({ min: 2, max: 100 }),
+  body("email").optional().trim().isEmail().normalizeEmail(),
+  body("gender").optional().isIn(["male", "female", "other"]),
+  body("dob").optional().isISO8601().toDate(),
 ];
 
 // ─── Controllers ──────────────────────────────────────────────────────────────
@@ -25,22 +25,25 @@ export const updateProfileValidation = [
  * GET /api/rider/profile
  */
 export async function getProfile(req: Request, res: Response): Promise<void> {
-  const user = await User.findById(req.user!.id).select('-fcmToken').lean();
+  const user = await User.findById(req.user!.id).select("-fcmToken").lean();
   if (!user) {
-    sendNotFound(res, 'User not found');
+    sendNotFound(res, "User not found");
     return;
   }
-  sendSuccess(res, 'Profile fetched', user);
+  sendSuccess(res, "Profile fetched", user);
 }
 
 /**
  * PUT /api/rider/profile
  */
-export async function updateProfile(req: Request, res: Response): Promise<void> {
+export async function updateProfile(
+  req: Request,
+  res: Response,
+): Promise<void> {
   const { name, email, gender, dob, avatar } = req.body as {
     name?: string;
     email?: string;
-    gender?: 'male' | 'female' | 'other';
+    gender?: "male" | "female" | "other";
     dob?: Date;
     avatar?: string;
   };
@@ -48,41 +51,88 @@ export async function updateProfile(req: Request, res: Response): Promise<void> 
   const user = await User.findByIdAndUpdate(
     req.user!.id,
     { $set: { name, email, gender, dob, avatar } },
-    { new: true, runValidators: true }
-  ).select('-fcmToken');
+    { new: true, runValidators: true },
+  ).select("-fcmToken");
 
   if (!user) {
-    sendNotFound(res, 'User not found');
+    sendNotFound(res, "User not found");
     return;
   }
-  sendSuccess(res, 'Profile updated', user);
+  sendSuccess(res, "Profile updated", user);
 }
 
 /**
  * GET /api/rider/rides
  * Paginated ride history for the rider.
  */
-export async function getRideHistory(req: Request, res: Response): Promise<void> {
+export async function getRideHistory(
+  req: Request,
+  res: Response,
+): Promise<void> {
   const page = parseInt(req.query.page as string) || 1;
   const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
   const skip = (page - 1) * limit;
 
   const [rides, total] = await Promise.all([
-    Ride.find({ riderId: req.user!.id, status: 'completed' })
+    Ride.find({ riderId: req.user!.id, status: "completed" })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate('driverId', 'name phone avatar vehicleType vehicleNumber rating')
+      .populate(
+        "driverId",
+        "name phone avatar vehicleType vehicleNumber rating",
+      )
       .lean(),
-    Ride.countDocuments({ riderId: req.user!.id, status: 'completed' }),
+    Ride.countDocuments({ riderId: req.user!.id, status: "completed" }),
   ]);
 
-  sendSuccess(res, 'Ride history fetched', rides, 200, {
+  sendSuccess(res, "Ride history fetched", rides, 200, {
     page,
     limit,
     total,
     totalPages: Math.ceil(total / limit),
   });
+}
+
+/**
+ * GET /api/rider/wallet
+ * Returns rider wallet balance and transaction history.
+ */
+export async function getWallet(req: Request, res: Response): Promise<void> {
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+  const skip = (page - 1) * limit;
+
+  const [user, transactions, total] = await Promise.all([
+    User.findById(req.user!.id).select("walletBalance").lean(),
+    Transaction.find({ userId: req.user!.id, userModel: "User" })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Transaction.countDocuments({ userId: req.user!.id, userModel: "User" }),
+  ]);
+
+  if (!user) {
+    sendNotFound(res, "User not found");
+    return;
+  }
+
+  sendSuccess(
+    res,
+    "Wallet details fetched",
+    {
+      walletBalance: user.walletBalance,
+      transactions,
+    },
+    200,
+    {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  );
 }
 
 /**
@@ -93,25 +143,28 @@ export async function getRideById(req: Request, res: Response): Promise<void> {
     _id: req.params.rideId,
     riderId: req.user!.id,
   })
-    .populate('driverId', 'name phone avatar vehicleType vehicleNumber rating')
+    .populate("driverId", "name phone avatar vehicleType vehicleNumber rating")
     .lean();
 
   if (!ride) {
-    sendNotFound(res, 'Ride not found');
+    sendNotFound(res, "Ride not found");
     return;
   }
-  sendSuccess(res, 'Ride details fetched', ride);
+  sendSuccess(res, "Ride details fetched", ride);
 }
 
 /**
  * PUT /api/rider/fcm-token
  */
-export async function updateFcmToken(req: Request, res: Response): Promise<void> {
+export async function updateFcmToken(
+  req: Request,
+  res: Response,
+): Promise<void> {
   const { fcmToken } = req.body as { fcmToken: string };
   if (!fcmToken) {
-    sendError(res, 'fcmToken is required', 400);
+    sendError(res, "fcmToken is required", 400);
     return;
   }
   await User.findByIdAndUpdate(req.user!.id, { $set: { fcmToken } });
-  sendSuccess(res, 'FCM token updated');
+  sendSuccess(res, "FCM token updated");
 }

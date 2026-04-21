@@ -13,8 +13,7 @@ import {
   sendForbidden,
   sendConflict,
 } from "../utils/response";
-import { logger } from "../utils/logger";
-
+import { logger } from "../utils/logger"
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 export const registerDriverValidation = [

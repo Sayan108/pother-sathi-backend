@@ -13,6 +13,7 @@ import { initSocketHandlers } from "../../src/sockets";
 import { User } from "../../src/models/User";
 import { Driver } from "../../src/models/Driver";
 import { Ride } from "../../src/models/Ride";
+import { Transaction } from "../../src/models/Transaction";
 import {
   connectTestDB,
   disconnectTestDB,
@@ -690,6 +691,56 @@ describe("Full Ride Lifecycle (Socket)", () => {
     // Verify ride is now completed in DB
     const completedRide = await Ride.findById(rideId).lean();
     expect(completedRide?.status).toBe("completed");
+  });
+
+  it("should deduct rider wallet and create transaction for wallet payment", async () => {
+    await User.findByIdAndUpdate(riderId, { walletBalance: 200 });
+
+    const ride = await Ride.create({
+      riderId: new mongoose.Types.ObjectId(riderId),
+      driverId: new mongoose.Types.ObjectId(driverId),
+      pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
+      drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
+      distance: 5,
+      duration: 15,
+      vehicleType: "auto",
+      fare: 100,
+      platformFee: 15,
+      driverEarning: 85,
+      discount: 0,
+      paymentMethod: "wallet",
+      otp: "5678",
+      status: "driver_assigned",
+      driverAssignedAt: new Date(),
+    });
+    rideId = ride._id.toString();
+
+    const arrivedResult = await promiseWithTimeout<any>((resolve) => {
+      driverSocket.emit("ride:arrived", { rideId }, resolve);
+    }, 3000);
+    expect(arrivedResult.success).toBe(true);
+
+    const otpResult = await promiseWithTimeout<any>((resolve) => {
+      driverSocket.emit("ride:verify_otp", { rideId, otp: "5678" }, resolve);
+    }, 3000);
+    expect(otpResult.success).toBe(true);
+
+    const completeResult = await promiseWithTimeout<any>((resolve) => {
+      driverSocket.emit("ride:complete", { rideId }, resolve);
+    }, 3000);
+    expect(completeResult.success).toBe(true);
+
+    const rider = await User.findById(riderId).lean();
+    expect(rider?.walletBalance).toBe(100);
+
+    const transaction = await Transaction.findOne({
+      userId: riderId,
+      userModel: "User",
+      rideId: ride._id,
+      type: "ride_payment",
+    }).lean();
+    expect(transaction).toBeTruthy();
+    expect(transaction?.amount).toBe(-100);
   });
 
   it("should reject wrong OTP in ride:verify_otp", async () => {
