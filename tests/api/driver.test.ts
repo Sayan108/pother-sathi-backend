@@ -130,6 +130,40 @@ describe("POST /api/driver/register", () => {
 
     expect(res.status).toBe(403);
   });
+
+  it("should credit the union leader with the referral bonus when a new driver registers with a referral code", async () => {
+    const unionLeader = await Driver.create({
+      phone: "9876543213",
+      countryCode: "+91",
+      accountStatus: "verified",
+      isUnionLeader: true,
+      referralCode: "ULREF1",
+      walletBalance: 0,
+      totalEarnings: 0,
+      rating: 5.0,
+      totalRatings: 0,
+      totalRides: 0,
+      isActive: true,
+      isOnline: false,
+      isAvailable: false,
+    });
+
+    const res = await request(app)
+      .post("/api/driver/register")
+      .set("Authorization", `Bearer ${driverToken}`)
+      .send({
+        name: "John Driver",
+        vehicleType: "auto",
+        vehicleModel: "Bajaj RE",
+        vehicleNumber: "WB01A5678",
+        licenseNumber: "DL123456",
+        referralCode: "ULREF1",
+      });
+
+    expect(res.status).toBe(200);
+    const updatedUnionLeader = await Driver.findById(unionLeader._id);
+    expect(updatedUnionLeader?.walletBalance).toBe(300);
+  });
 });
 
 // ── PATCH /api/driver/activate ─────────────────────────────────────────────────

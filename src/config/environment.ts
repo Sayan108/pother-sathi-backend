@@ -40,8 +40,11 @@ export const env = {
   DRIVER_MIN_WALLET_BALANCE: parseFloat(
     process.env.DRIVER_MIN_WALLET_BALANCE || "100",
   ),
-  DRIVER_REFERRAL_BONUS: parseFloat(
-    process.env.DRIVER_REFERRAL_BONUS || "1000",
+  DRIVER_VERIFICATION_BONUS: parseFloat(
+    process.env.DRIVER_VERIFICATION_BONUS || "3000",
+  ),
+  UNION_LEADER_REFERRAL_BONUS: parseFloat(
+    process.env.UNION_LEADER_REFERRAL_BONUS || "300",
   ),
 
   // Ride matching radius in km

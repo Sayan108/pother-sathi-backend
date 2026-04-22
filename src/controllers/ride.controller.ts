@@ -275,6 +275,7 @@ export async function verifyRideOTP(
 
   sendSuccess(res, "OTP verified. Ride started!", {
     rideId: ride._id,
+    pickup: ride.pickup,
     drop: ride.drop,
   });
 }
@@ -305,16 +306,17 @@ export async function completeRide(req: Request, res: Response): Promise<void> {
   const driver = await Driver.findById(driverId);
   if (driver) {
     const balanceBefore = driver.walletBalance;
-    // Deduct platform fee from wallet, add ride earning
-    driver.walletBalance =
-      Math.max(0, driver.walletBalance - ride.platformFee) + ride.driverEarning;
+    // Deduct platform fee from wallet, then credit ride earnings
+    const newBalance =
+      driver.walletBalance + ride.driverEarning - ride.platformFee;
+    driver.walletBalance = Math.max(0, newBalance);
     driver.totalEarnings += ride.driverEarning;
     driver.totalRides += 1;
     driver.isAvailable = true;
     driver.currentRideId = undefined;
     await driver.save();
 
-    // Record transactions
+    // Record ride earnings transaction
     await Transaction.create([
       {
         userId: driver._id,
@@ -322,7 +324,7 @@ export async function completeRide(req: Request, res: Response): Promise<void> {
         type: "ride_earning",
         amount: ride.driverEarning,
         balanceBefore,
-        balanceAfter: driver.walletBalance,
+        balanceAfter: balanceBefore + ride.driverEarning,
         rideId: ride._id,
         description: `Ride earnings from ${ride.pickup.address || "pickup"} to ${ride.drop.address || "drop"}`,
         status: "completed",
@@ -332,7 +334,7 @@ export async function completeRide(req: Request, res: Response): Promise<void> {
         userModel: "Driver",
         type: "platform_fee",
         amount: -ride.platformFee,
-        balanceBefore,
+        balanceBefore: balanceBefore + ride.driverEarning,
         balanceAfter: driver.walletBalance,
         rideId: ride._id,
         description: `Platform fee for ride ${ride._id}`,
@@ -352,6 +354,8 @@ export async function completeRide(req: Request, res: Response): Promise<void> {
       rideId: ride._id,
       fare: ride.fare,
       paymentMethod: ride.paymentMethod,
+      pickup: ride.pickup,
+      drop: ride.drop,
     });
   }
 
@@ -360,6 +364,8 @@ export async function completeRide(req: Request, res: Response): Promise<void> {
     earning: ride.driverEarning,
     platformFee: ride.platformFee,
     walletBalance: driver?.walletBalance,
+    pickup: ride.pickup,
+    drop: ride.drop,
   });
 }
 

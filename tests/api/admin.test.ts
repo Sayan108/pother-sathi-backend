@@ -29,39 +29,39 @@ afterEach(async () => {
   await clearCollections();
 });
 
-describe("Admin recharge request approval", () => {
-  beforeEach(async () => {
-    const admin = await User.create({
-      phone: "9876543219",
-      countryCode: "+91",
-      role: "admin",
-      isVerified: true,
-      isActive: true,
-      walletBalance: 0,
-      rating: 5.0,
-      totalRatings: 0,
-      totalRides: 0,
-    });
-    adminToken = generateAdminToken(admin._id.toString(), "9876543219");
-
-    const driver = await Driver.create({
-      phone: "9876543218",
-      countryCode: "+91",
-      accountStatus: "verified",
-      name: "Approved Driver",
-      vehicleType: "auto",
-      vehicleModel: "Bajaj RE",
-      vehicleNumber: "WB01A9999",
-      isActive: true,
-      isOnline: true,
-      isAvailable: true,
-      walletBalance: 500,
-      location: { type: "Point", coordinates: [88.3639, 22.5726] },
-    });
-    driverId = driver._id.toString();
-    driverToken = generateDriverToken(driverId, "9876543218");
+beforeEach(async () => {
+  const admin = await User.create({
+    phone: "9876543219",
+    countryCode: "+91",
+    role: "admin",
+    isVerified: true,
+    isActive: true,
+    walletBalance: 0,
+    rating: 5.0,
+    totalRatings: 0,
+    totalRides: 0,
   });
+  adminToken = generateAdminToken(admin._id.toString(), "9876543219");
 
+  const driver = await Driver.create({
+    phone: "9876543218",
+    countryCode: "+91",
+    accountStatus: "verified",
+    name: "Approved Driver",
+    vehicleType: "auto",
+    vehicleModel: "Bajaj RE",
+    vehicleNumber: "WB01A9999",
+    isActive: true,
+    isOnline: true,
+    isAvailable: true,
+    walletBalance: 500,
+    location: { type: "Point", coordinates: [88.3639, 22.5726] },
+  });
+  driverId = driver._id.toString();
+  driverToken = generateDriverToken(driverId, "9876543218");
+});
+
+describe("Admin recharge request approval", () => {
   it("should approve a pending recharge request", async () => {
     const requestRes = await request(app)
       .post("/api/driver/wallet/recharge-request")
@@ -117,5 +117,44 @@ describe("Admin recharge request approval", () => {
 
     expect([403, 401]).toContain(approveRes.status);
     expect(approveRes.body.success).toBe(false);
+  });
+});
+
+describe("Admin driver approvals and wallet control", () => {
+  it("should verify a pending driver and credit verification bonus", async () => {
+    const pendingDriver = await Driver.create({
+      phone: "9876543217",
+      countryCode: "+91",
+      accountStatus: "pending",
+      isActive: true,
+      isOnline: false,
+      isAvailable: false,
+      walletBalance: 0,
+      totalEarnings: 0,
+      rating: 5.0,
+      totalRatings: 0,
+      totalRides: 0,
+    });
+
+    const verifyRes = await request(app)
+      .patch(`/api/admin/drivers/${pendingDriver._id}/verify`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send();
+
+    expect(verifyRes.status).toBe(200);
+    expect(verifyRes.body.success).toBe(true);
+    expect(verifyRes.body.data.accountStatus).toBe("verified");
+    expect(verifyRes.body.data.walletBalance).toBe(3000);
+  });
+
+  it("should adjust a driver's wallet using admin wallet control", async () => {
+    const adjustRes = await request(app)
+      .patch(`/api/admin/drivers/${driverId}/wallet`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ action: "credit", amount: 200, description: "Admin credit" });
+
+    expect(adjustRes.status).toBe(200);
+    expect(adjustRes.body.success).toBe(true);
+    expect(adjustRes.body.data.walletBalance).toBe(700);
   });
 });

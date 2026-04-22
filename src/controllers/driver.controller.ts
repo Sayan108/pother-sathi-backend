@@ -13,7 +13,7 @@ import {
   sendForbidden,
   sendConflict,
 } from "../utils/response";
-import { logger } from "../utils/logger"
+import { logger } from "../utils/logger";
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 export const registerDriverValidation = [
@@ -169,15 +169,16 @@ export async function registerDriver(
 
     if (!unionLeader._id.equals(driver._id)) {
       driver.referredBy = unionLeader._id;
-      unionLeader.walletBalance += env.DRIVER_REFERRAL_BONUS;
+      unionLeader.walletBalance += env.UNION_LEADER_REFERRAL_BONUS;
       unionLeader.referralCount = (unionLeader.referralCount || 0) + 1;
       await unionLeader.save();
       await Transaction.create({
         userId: unionLeader._id,
         userModel: "Driver",
         type: "referral_bonus",
-        amount: env.DRIVER_REFERRAL_BONUS,
-        balanceBefore: unionLeader.walletBalance - env.DRIVER_REFERRAL_BONUS,
+        amount: env.UNION_LEADER_REFERRAL_BONUS,
+        balanceBefore:
+          unionLeader.walletBalance - env.UNION_LEADER_REFERRAL_BONUS,
         balanceAfter: unionLeader.walletBalance,
         description: `Referral bonus for ${driver.phone}`,
         status: "completed",
@@ -208,6 +209,21 @@ function hasDriverDocuments(driver: IDriver) {
     driver.licenseDocument &&
     driver.vehicleDocument
   );
+}
+
+async function creditDriverVerificationBonus(driver: IDriver) {
+  const balanceBefore = driver.walletBalance;
+  driver.walletBalance += env.DRIVER_VERIFICATION_BONUS;
+  await Transaction.create({
+    userId: driver._id,
+    userModel: "Driver",
+    type: "wallet_recharge",
+    amount: env.DRIVER_VERIFICATION_BONUS,
+    balanceBefore,
+    balanceAfter: driver.walletBalance,
+    description: `Driver verification bonus credited to wallet`,
+    status: "completed",
+  });
 }
 
 function generateReferralCode(driverId: string): string {
@@ -287,11 +303,12 @@ export async function activateDriver(
 
   driver.accountStatus = "verified";
   driver.isVerified = true;
-  driver.walletBalance = 3000;
+  await creditDriverVerificationBonus(driver);
   await driver.save();
 
   sendSuccess(res, "Driver account activated. You can now go online.", {
     accountStatus: driver.accountStatus,
+    walletBalance: driver.walletBalance,
   });
 }
 
