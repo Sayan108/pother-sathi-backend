@@ -119,14 +119,12 @@ describe("POST /api/auth/verify-otp", () => {
 
   it("should create a new rider and return tokens for valid OTP (demo mode)", async () => {
     const start = Date.now();
-    const res = await request(app)
-      .post("/api/auth/verify-otp")
-      .send({
-        phone: "9876543210",
-        countryCode: "+91",
-        otp: "123456",
-        role: "rider",
-      });
+    const res = await request(app).post("/api/auth/verify-otp").send({
+      phone: "9876543210",
+      countryCode: "+91",
+      otp: "123456",
+      role: "rider",
+    });
     const time = Date.now() - start;
 
     expect(res.status).toBe(201); // New user created
@@ -140,14 +138,12 @@ describe("POST /api/auth/verify-otp", () => {
 
   it("should login existing rider and return 200", async () => {
     // First verify to create the user
-    await request(app)
-      .post("/api/auth/verify-otp")
-      .send({
-        phone: "9876543210",
-        countryCode: "+91",
-        otp: "123456",
-        role: "rider",
-      });
+    await request(app).post("/api/auth/verify-otp").send({
+      phone: "9876543210",
+      countryCode: "+91",
+      otp: "123456",
+      role: "rider",
+    });
 
     // Send OTP again
     await request(app)
@@ -155,14 +151,12 @@ describe("POST /api/auth/verify-otp", () => {
       .send({ phone: "9876543210", countryCode: "+91", role: "rider" });
 
     // Login again
-    const res = await request(app)
-      .post("/api/auth/verify-otp")
-      .send({
-        phone: "9876543210",
-        countryCode: "+91",
-        otp: "123456",
-        role: "rider",
-      });
+    const res = await request(app).post("/api/auth/verify-otp").send({
+      phone: "9876543210",
+      countryCode: "+91",
+      otp: "123456",
+      role: "rider",
+    });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -170,28 +164,24 @@ describe("POST /api/auth/verify-otp", () => {
   });
 
   it("should return 400 for wrong OTP", async () => {
-    const res = await request(app)
-      .post("/api/auth/verify-otp")
-      .send({
-        phone: "9876543210",
-        countryCode: "+91",
-        otp: "000000",
-        role: "rider",
-      });
+    const res = await request(app).post("/api/auth/verify-otp").send({
+      phone: "9876543210",
+      countryCode: "+91",
+      otp: "000000",
+      role: "rider",
+    });
 
     expect([400, 422]).toContain(res.status);
     expect(res.body.success).toBe(false);
   });
 
   it("should return 400 for OTP with wrong length", async () => {
-    const res = await request(app)
-      .post("/api/auth/verify-otp")
-      .send({
-        phone: "9876543210",
-        countryCode: "+91",
-        otp: "123",
-        role: "rider",
-      });
+    const res = await request(app).post("/api/auth/verify-otp").send({
+      phone: "9876543210",
+      countryCode: "+91",
+      otp: "123",
+      role: "rider",
+    });
 
     expect([400, 422]).toContain(res.status);
     expect(res.body.success).toBe(false);
@@ -220,14 +210,12 @@ describe("POST /api/auth/verify-otp", () => {
       .post("/api/auth/send-otp")
       .send({ phone: "9876543211", countryCode: "+91", role: "driver" });
 
-    const res = await request(app)
-      .post("/api/auth/verify-otp")
-      .send({
-        phone: "9876543211",
-        countryCode: "+91",
-        otp: "123456",
-        role: "driver",
-      });
+    const res = await request(app).post("/api/auth/verify-otp").send({
+      phone: "9876543211",
+      countryCode: "+91",
+      otp: "123456",
+      role: "driver",
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
@@ -272,6 +260,82 @@ describe("POST /api/auth/verify-otp", () => {
   });
 });
 
+describe("POST /api/auth/admin/register", () => {
+  it("should create a new admin account and return tokens", async () => {
+    const res = await request(app).post("/api/auth/admin/register").send({
+      phone: "9999999999",
+      countryCode: "+91",
+      password: "Password1",
+      name: "Admin User",
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toHaveProperty("accessToken");
+    expect(res.body.data).toHaveProperty("refreshToken");
+    expect(res.body.data.role).toBe("admin");
+  });
+
+  it("should prevent creating a second admin without ADMIN_CREATION_KEY set", async () => {
+    await request(app).post("/api/auth/admin/register").send({
+      phone: "9999999999",
+      countryCode: "+91",
+      password: "Password1",
+      name: "Admin User",
+    });
+
+    const res = await request(app).post("/api/auth/admin/register").send({
+      phone: "9999999998",
+      countryCode: "+91",
+      password: "Password1",
+      name: "Second Admin",
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body.success).toBe(false);
+  });
+});
+
+describe("POST /api/auth/admin/login", () => {
+  it("should login an existing admin with correct password", async () => {
+    await request(app).post("/api/auth/admin/register").send({
+      phone: "9999999999",
+      countryCode: "+91",
+      password: "Password1",
+      name: "Admin User",
+    });
+
+    const res = await request(app).post("/api/auth/admin/login").send({
+      phone: "9999999999",
+      countryCode: "+91",
+      password: "Password1",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.role).toBe("admin");
+    expect(res.body.data).toHaveProperty("accessToken");
+  });
+
+  it("should reject login with wrong password", async () => {
+    await request(app).post("/api/auth/admin/register").send({
+      phone: "9999999999",
+      countryCode: "+91",
+      password: "Password1",
+      name: "Admin User",
+    });
+
+    const res = await request(app).post("/api/auth/admin/login").send({
+      phone: "9999999999",
+      countryCode: "+91",
+      password: "WrongPassword",
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
+  });
+});
+
 // ── POST /api/auth/refresh ─────────────────────────────────────────────────────
 
 describe("POST /api/auth/refresh", () => {
@@ -283,14 +347,12 @@ describe("POST /api/auth/refresh", () => {
     await request(app)
       .post("/api/auth/send-otp")
       .send({ phone: "9876543210", countryCode: "+91", role: "rider" });
-    const res = await request(app)
-      .post("/api/auth/verify-otp")
-      .send({
-        phone: "9876543210",
-        countryCode: "+91",
-        otp: "123456",
-        role: "rider",
-      });
+    const res = await request(app).post("/api/auth/verify-otp").send({
+      phone: "9876543210",
+      countryCode: "+91",
+      otp: "123456",
+      role: "rider",
+    });
     refreshToken = res.body.data.refreshToken;
     userId = res.body.data.user.id;
   });
@@ -334,14 +396,12 @@ describe("POST /api/auth/logout", () => {
     await request(app)
       .post("/api/auth/send-otp")
       .send({ phone: "9876543210", countryCode: "+91", role: "rider" });
-    const res = await request(app)
-      .post("/api/auth/verify-otp")
-      .send({
-        phone: "9876543210",
-        countryCode: "+91",
-        otp: "123456",
-        role: "rider",
-      });
+    const res = await request(app).post("/api/auth/verify-otp").send({
+      phone: "9876543210",
+      countryCode: "+91",
+      otp: "123456",
+      role: "rider",
+    });
     accessToken = res.body.data.accessToken;
   });
 

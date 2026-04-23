@@ -60,6 +60,9 @@ export const env = {
     process.env.DEMO_MODE === "true" || process.env.NODE_ENV === "development",
   DEMO_OTP: process.env.DEMO_OTP || "123456",
 
+  // Admin account creation
+  ADMIN_CREATION_KEY: process.env.ADMIN_CREATION_KEY || "",
+
   // Development helpers
   DEV_SEED_ACTIVE_DRIVERS:
     process.env.DEV_SEED_ACTIVE_DRIVERS === "true" ||

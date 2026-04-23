@@ -15,6 +15,7 @@ import {
   sendCreated,
   sendError,
   sendUnauthorized,
+  sendForbidden,
   sendNotFound,
 } from "../utils/response";
 import { logger } from "../utils/logger";
@@ -54,6 +55,38 @@ export const refreshTokenValidation = [
   body("refreshToken").notEmpty().withMessage("Refresh token required"),
 ];
 
+export const createAdminValidation = [
+  body("phone")
+    .trim()
+    .matches(/^\d{10,15}$/)
+    .withMessage("Phone must be 10-15 digits"),
+  body("countryCode")
+    .optional()
+    .matches(/^\+\d{1,4}$/)
+    .withMessage("Invalid country code"),
+  body("password")
+    .isLength({ min: 8 })
+    .withMessage("Password must be at least 8 characters"),
+  body("name")
+    .optional()
+    .trim()
+    .isLength({ min: 2 })
+    .withMessage("Name must be at least 2 characters"),
+  body("adminSecret").optional().trim(),
+];
+
+export const adminPasswordLoginValidation = [
+  body("phone")
+    .trim()
+    .matches(/^\d{10,15}$/)
+    .withMessage("Phone must be 10-15 digits"),
+  body("countryCode")
+    .optional()
+    .matches(/^\+\d{1,4}$/)
+    .withMessage("Invalid country code"),
+  body("password").notEmpty().withMessage("Password is required"),
+];
+
 // ─── Controllers ──────────────────────────────────────────────────────────────
 
 /**
@@ -83,6 +116,137 @@ export async function sendOTPHandler(
     });
   } catch (error) {
     logger.error("sendOTP error:", error);
+    sendError(res, (error as Error).message, 503);
+  }
+}
+
+/**
+ * POST /api/auth/admin/register
+ * Creates a new admin account using phone and password.
+ */
+export async function createAdminAccountHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const {
+    phone,
+    countryCode = "+91",
+    password,
+    name,
+    adminSecret,
+  } = req.body as {
+    phone: string;
+    countryCode?: string;
+    password: string;
+    name?: string;
+    adminSecret?: string;
+  };
+
+  try {
+    const existingAdminCount = await User.countDocuments({ role: "admin" });
+    
+
+    const existingUser = await User.findByPhone(phone, countryCode);
+    if (existingUser) {
+      sendError(res, "Account with this phone already exists", 409);
+      return;
+    }
+
+    const user = await User.create({
+      phone,
+      countryCode,
+      role: "admin",
+      password,
+      name,
+      isVerified: true,
+      isActive: true,
+    });
+
+    const tokenPayload = {
+      id: user._id.toString(),
+      phone: user.phone,
+      role: "admin" as const,
+    };
+    const accessToken = signAccessToken(tokenPayload);
+    const refreshToken = signRefreshToken(tokenPayload);
+
+    sendCreated(res, "Admin account created successfully", {
+      accessToken,
+      refreshToken,
+      role: "admin",
+      user: {
+        id: user._id.toString(),
+        phone: user.phone,
+        countryCode: user.countryCode,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    logger.error("createAdminAccount error:", error);
+    sendError(res, (error as Error).message, 503);
+  }
+}
+
+/**
+ * POST /api/auth/admin/login
+ * Authenticates an admin using phone and password.
+ */
+export async function adminPasswordLoginHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const {
+    phone,
+    countryCode = "+91",
+    password,
+  } = req.body as {
+    phone: string;
+    countryCode?: string;
+    password: string;
+  };
+
+  try {
+    const user = await User.findOne({
+      phone,
+      countryCode,
+      role: "admin",
+    }).select("+password");
+
+    if (!user || !(await user.comparePassword(password))) {
+      sendUnauthorized(res, "Invalid credentials");
+      return;
+    }
+
+    if (!user.isActive) {
+      sendForbidden(res, "Account is inactive");
+      return;
+    }
+
+    const tokenPayload = {
+      id: user._id.toString(),
+      phone: user.phone,
+      role: "admin" as const,
+    };
+    const accessToken = signAccessToken(tokenPayload);
+    const refreshToken = signRefreshToken(tokenPayload);
+
+    sendSuccess(res, "Login successful", {
+      accessToken,
+      refreshToken,
+      role: "admin",
+      user: {
+        id: user._id.toString(),
+        phone: user.phone,
+        countryCode: user.countryCode,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    logger.error("adminPasswordLogin error:", error);
     sendError(res, (error as Error).message, 503);
   }
 }

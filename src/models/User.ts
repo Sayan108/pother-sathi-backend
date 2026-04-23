@@ -6,6 +6,7 @@ export interface IUser extends Document {
   phone: string;
   countryCode: string;
   role: "rider" | "admin";
+  password?: string;
   name?: string;
   email?: string;
   avatar?: string;
@@ -21,6 +22,7 @@ export interface IUser extends Document {
   createdAt: Date;
   updatedAt: Date;
   comparePhone(phone: string): boolean;
+  comparePassword(password: string): Promise<boolean>;
 }
 
 export interface IUserModel extends Model<IUser> {
@@ -45,6 +47,11 @@ const userSchema = new Schema<IUser>(
       type: String,
       enum: ["rider", "admin"],
       default: "rider",
+    },
+    password: {
+      type: String,
+      select: false,
+      minlength: [8, "Password must be at least 8 characters"],
     },
     name: {
       type: String,
@@ -88,10 +95,38 @@ userSchema.methods.comparePhone = function (phone: string): boolean {
   return this.phone === phone;
 };
 
+userSchema.methods.comparePassword = async function (
+  password: string,
+): Promise<boolean> {
+  if (!this.password) return false;
+  return bcrypt.compare(password, this.password);
+};
+
+userSchema.pre<IUser>("save", async function (next) {
+  if (!this.isModified("password")) {
+    next();
+    return;
+  }
+
+  if (!this.password) {
+    next();
+    return;
+  }
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error as Error);
+  }
+});
+
 // Never return sensitive data
 userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.fcmToken;
+  delete obj.password;
   return obj;
 };
 
