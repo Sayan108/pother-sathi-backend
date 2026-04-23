@@ -144,7 +144,15 @@ export async function createAdminAccountHandler(
 
   try {
     const existingAdminCount = await User.countDocuments({ role: "admin" });
-    
+    if (env.ADMIN_CREATION_KEY) {
+      if (!adminSecret || adminSecret !== env.ADMIN_CREATION_KEY) {
+        sendUnauthorized(res, "Invalid admin creation secret");
+        return;
+      }
+    } else if (existingAdminCount > 3) {
+      sendForbidden(res, "Admin creation is restricted");
+      return;
+    }
 
     const existingUser = await User.findByPhone(phone, countryCode);
     if (existingUser) {
