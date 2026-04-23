@@ -1,11 +1,56 @@
 {
   "info": {
-    "_postman_id": "pother-sathi-backend-collection",
-    "name": "Pother Sathi Backend API & Sockets",
+    "_postman_id": "f68220f7-6c15-4f9d-9fab-3f2a8d1dcc29",
+    "name": "Pother Sathi Backend API & Socket.io",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Comprehensive collection for REST API and WebSocket (Socket.io) endpoints for Pother Sathi. Includes authentication, driver, rider, ride management, and socket event samples."
+    "description": "Complete Postman collection for Pother Sathi backend REST APIs and Socket.IO event references. Use {{base_url}} for HTTP requests and {{ws_url}} for WebSocket/socket.io connections."
   },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "ws_url",
+      "value": "ws://localhost:5000"
+    },
+    {
+      "key": "access_token",
+      "value": "<access_token>"
+    },
+    {
+      "key": "refresh_token",
+      "value": "<refresh_token>"
+    }
+  ],
   "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          }
+        },
+        {
+          "name": "API Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "health"]
+            }
+          }
+        }
+      ]
+    },
     {
       "name": "Auth",
       "item": [
@@ -13,7 +58,9 @@
           "name": "Send OTP",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"phone\": \"017XXXXXXXX\"\n}"
@@ -29,7 +76,9 @@
           "name": "Verify OTP",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"phone\": \"017XXXXXXXX\",\n  \"otp\": \"1234\"\n}"
@@ -45,10 +94,12 @@
           "name": "Refresh Token",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"<refresh_token>\"\n}"
+              "raw": "{\n  \"refreshToken\": \"{{refresh_token}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/auth/refresh",
@@ -62,7 +113,7 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "url": {
@@ -81,10 +132,13 @@
           "name": "Register Driver",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"John Doe\",\n  \"phone\": \"017XXXXXXXX\",\n  \"license\": \"ABC123\"\n}"
+              "raw": "{\n  \"name\": \"John Doe\",\n  \"vehicleType\": \"auto\",\n  \"vehicleModel\": \"Bajaj RE\",\n  \"vehicleNumber\": \"WB01A1234\",\n  \"licenseNumber\": \"DL12345678\",\n  \"licenseExpiry\": \"2027-12-31\",\n  \"serviceArea\": \"Dhaka\",\n  \"email\": \"john@example.com\",\n  \"gender\": \"male\",\n  \"dob\": \"1990-01-01\",\n  \"nidNumber\": \"1990123456789\",\n  \"nidDocument\": \"https://example.com/nid.jpg\",\n  \"licenseDocument\": \"https://example.com/license.jpg\",\n  \"vehicleDocument\": \"https://example.com/vehicle.jpg\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/driver/register",
@@ -98,7 +152,7 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" }
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
             "url": {
               "raw": "{{base_url}}/api/driver/profile",
@@ -112,12 +166,12 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"John Doe\",\n  \"license\": \"XYZ789\"\n}"
+              "raw": "{\n  \"name\": \"John Doe\",\n  \"vehicleModel\": \"Bajaj RE\",\n  \"vehicleNumber\": \"WB01A1234\",\n  \"vehicleColor\": \"Yellow\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/driver/profile",
@@ -127,11 +181,44 @@
           }
         },
         {
+          "name": "Create Referral Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"referralCode\": \"REF1234\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/driver/referral-code",
+              "host": ["{{base_url}}"],
+              "path": ["api", "driver", "referral-code"]
+            }
+          }
+        },
+        {
+          "name": "Activate Driver",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/driver/activate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "driver", "activate"]
+            }
+          }
+        },
+        {
           "name": "Toggle Online Status",
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
@@ -146,11 +233,11 @@
           }
         },
         {
-          "name": "Update Location",
+          "name": "Update Driver Location",
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
@@ -165,11 +252,11 @@
           }
         },
         {
-          "name": "Get Ride History",
+          "name": "Get Driver Ride History",
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" }
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
             "url": {
               "raw": "{{base_url}}/api/driver/rides",
@@ -179,11 +266,11 @@
           }
         },
         {
-          "name": "Get Wallet",
+          "name": "Get Driver Wallet",
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" }
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
             "url": {
               "raw": "{{base_url}}/api/driver/wallet",
@@ -197,12 +284,12 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"amount\": 500\n}"
+              "raw": "{\n  \"amount\": 500,\n  \"paymentReference\": \"PAY12345\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/driver/wallet/recharge",
@@ -212,11 +299,30 @@
           }
         },
         {
-          "name": "Update FCM Token",
+          "name": "Request Wallet Recharge",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 500,\n  \"paymentReference\": \"PAY12345\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/driver/wallet/recharge-request",
+              "host": ["{{base_url}}"],
+              "path": ["api", "driver", "wallet", "recharge-request"]
+            }
+          }
+        },
+        {
+          "name": "Update Driver FCM Token",
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
@@ -240,7 +346,7 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" }
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
             "url": {
               "raw": "{{base_url}}/api/rider/profile",
@@ -254,12 +360,12 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Jane Doe\"\n}"
+              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"email\": \"jane@example.com\",\n  \"gender\": \"female\",\n  \"dob\": \"1992-05-10\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/rider/profile",
@@ -269,11 +375,11 @@
           }
         },
         {
-          "name": "Get Ride History",
+          "name": "Get Rider Ride History",
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" }
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
             "url": {
               "raw": "{{base_url}}/api/rider/rides",
@@ -283,11 +389,11 @@
           }
         },
         {
-          "name": "Get Ride By ID",
+          "name": "Get Rider Ride By ID",
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" }
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
             "url": {
               "raw": "{{base_url}}/api/rider/rides/:rideId",
@@ -297,11 +403,25 @@
           }
         },
         {
-          "name": "Update FCM Token",
+          "name": "Get Rider Wallet",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/rider/wallet",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rider", "wallet"]
+            }
+          }
+        },
+        {
+          "name": "Update Rider FCM Token",
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
@@ -318,6 +438,114 @@
       ]
     },
     {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "List Pending Drivers",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/drivers/pending",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "drivers", "pending"]
+            }
+          }
+        },
+        {
+          "name": "Verify Driver",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/drivers/:id/verify",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "drivers", ":id", "verify"]
+            }
+          }
+        },
+        {
+          "name": "Reject Driver",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/drivers/:id/reject",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "drivers", ":id", "reject"]
+            }
+          }
+        },
+        {
+          "name": "Adjust Driver Wallet",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"credit\",\n  \"amount\": 500\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/drivers/:id/wallet",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "drivers", ":id", "wallet"]
+            }
+          }
+        },
+        {
+          "name": "Get Recharge Requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/driver/wallet/recharge-requests",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "driver", "wallet", "recharge-requests"]
+            }
+          }
+        },
+        {
+          "name": "Approve Recharge Request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/driver/wallet/recharge-requests/:id/approve",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "driver", "wallet", "recharge-requests", ":id", "approve"]
+            }
+          }
+        },
+        {
+          "name": "Reject Recharge Request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/driver/wallet/recharge-requests/:id/reject",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "driver", "wallet", "recharge-requests", ":id", "reject"]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "Ride",
       "item": [
         {
@@ -325,12 +553,19 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" }
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
             "url": {
-              "raw": "{{base_url}}/api/rides/fare-estimate",
+              "raw": "{{base_url}}/api/rides/fare-estimate?pickupLat=23.8103&pickupLng=90.4125&dropLat=23.7806&dropLng=90.4000&vehicleType=auto",
               "host": ["{{base_url}}"],
-              "path": ["api", "rides", "fare-estimate"]
+              "path": ["api", "rides", "fare-estimate"],
+              "query": [
+                { "key": "pickupLat", "value": "23.8103" },
+                { "key": "pickupLng", "value": "90.4125" },
+                { "key": "dropLat", "value": "23.7806" },
+                { "key": "dropLng", "value": "90.4000" },
+                { "key": "vehicleType", "value": "auto" }
+              ]
             }
           }
         },
@@ -339,7 +574,7 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" }
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
             "url": {
               "raw": "{{base_url}}/api/rides/active",
@@ -353,7 +588,7 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" }
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
             "url": {
               "raw": "{{base_url}}/api/rides/:rideId",
@@ -363,54 +598,16 @@
           }
         },
         {
-          "name": "Book Ride",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" },
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"pickup\": {\n    \"lat\": 23.8103,\n    \"lng\": 90.4125\n  },\n  \"dropoff\": {\n    \"lat\": 23.7806,\n    \"lng\": 90.4000\n  }\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/rides/book",
-              "host": ["{{base_url}}"],
-              "path": ["api", "rides", "book"]
-            }
-          }
-        },
-        {
-          "name": "Cancel Ride",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" },
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"reason\": \"Changed my mind\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/rides/:rideId/cancel",
-              "host": ["{{base_url}}"],
-              "path": ["api", "rides", ":rideId", "cancel"]
-            }
-          }
-        },
-        {
           "name": "Rate Ride",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"rating\": 5,\n  \"comment\": \"Great ride!\"\n}"
+              "raw": "{\n  \"rating\": 5,\n  \"review\": \"Great ride!\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/rides/:rideId/rate",
@@ -418,157 +615,191 @@
               "path": ["api", "rides", ":rideId", "rate"]
             }
           }
-        },
-        {
-          "name": "Accept Ride",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/rides/:rideId/accept",
-              "host": ["{{base_url}}"],
-              "path": ["api", "rides", ":rideId", "accept"]
-            }
-          }
-        },
-        {
-          "name": "Arrived at Pickup",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/rides/:rideId/arrived",
-              "host": ["{{base_url}}"],
-              "path": ["api", "rides", ":rideId", "arrived"]
-            }
-          }
-        },
-        {
-          "name": "Verify Ride OTP",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" },
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"otp\": \"1234\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/rides/:rideId/verify-otp",
-              "host": ["{{base_url}}"],
-              "path": ["api", "rides", ":rideId", "verify-otp"]
-            }
-          }
-        },
-        {
-          "name": "Complete Ride",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer <access_token>" }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/rides/:rideId/complete",
-              "host": ["{{base_url}}"],
-              "path": ["api", "rides", ":rideId", "complete"]
-            }
-          }
         }
       ]
     },
     {
-      "name": "Socket.io Events (Reference)",
-      "description": "Sample events for connecting to the backend via Socket.io. Use a tool like [Postman WebSocket](https://learning.postman.com/docs/sending-requests/supported-api-protocols/#websocket) or [socket.io-client] in Node.js.",
+      "name": "Socket Events",
       "item": [
         {
-          "name": "Connect as Rider",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Example: Connect using socket.io-client in JS",
-                  "const socket = io('{{ws_url}}', {",
-                  "  auth: { token: '<access_token>' }",
-                  "});",
-                  "// Listen for events",
-                  "socket.on('rider:pong', data => console.log(data));",
-                  "// Emit heartbeat",
-                  "socket.emit('rider:ping');"
-                ]
-              }
-            }
-          ],
+          "name": "Socket.io Connection Guide",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{ws_url}}", "host": ["{{ws_url}}"] }
-          }
+            "url": {
+              "raw": "{{ws_url}}"
+            }
+          },
+          "description": "Use a Socket.IO client to connect with auth token. Example JavaScript:\n\n```javascript\nconst socket = io('{{ws_url}}', {\n  auth: { token: '{{access_token}}' }\n});\n```"
         },
         {
-          "name": "Rider: Cancel Search",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// socket.emit('rider:cancel_search', { rideId: '<ride_id>' });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Connect as Driver",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Example: Connect using socket.io-client in JS",
-                  "const socket = io('{{ws_url}}', {",
-                  "  auth: { token: '<access_token>' }",
-                  "});",
-                  "// Listen for events",
-                  "socket.on('driver:location', data => console.log(data));",
-                  "// Emit location update",
-                  "socket.emit('driver:location_update', { lat: 23.81, lng: 90.41 });"
-                ]
-              }
-            }
-          ],
+          "name": "Rider: ride:search",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{ws_url}}", "host": ["{{ws_url}}"] }
-          }
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Emit event from rider socket:\n\n```javascript\nsocket.emit('ride:search', {\n  pickup: { lat: 23.8103, lng: 90.4125, address: 'Dhaka' },\n  drop: { lat: 23.7806, lng: 90.4000, address: 'Gulshan' },\n  vehicleType: 'auto',\n  couponCode: 'DISCOUNT10'\n}, callback);\n```"
         },
         {
-          "name": "Driver: Reject Ride",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// socket.emit('driver:reject_ride', { rideId: '<ride_id>' });"
-                ]
-              }
-            }
-          ]
+          "name": "Rider: ride:book",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Emit event from rider socket:\n\n```javascript\nsocket.emit('ride:book', {\n  pickup: { lat: 23.8103, lng: 90.4125, address: 'Dhaka' },\n  drop: { lat: 23.7806, lng: 90.4000, address: 'Gulshan' },\n  vehicleType: 'auto',\n  couponCode: 'DISCOUNT10',\n  paymentMethod: 'cash'\n}, callback);\n```"
+        },
+        {
+          "name": "Rider: ride:cancel",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Emit event from rider socket:\n\n```javascript\nsocket.emit('ride:cancel', { rideId: '<rideId>', reason: 'Changed plan' }, callback);\n```"
+        },
+        {
+          "name": "Rider: rider:cancel_search",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Emit event from rider socket:\n\n```javascript\nsocket.emit('rider:cancel_search', { rideId: '<rideId>' });\n```"
+        },
+        {
+          "name": "Rider: rider:ping",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Emit event from rider socket:\n\n```javascript\nsocket.emit('rider:ping');\nsocket.on('rider:pong', data => console.log(data));\n```"
+        },
+        {
+          "name": "Driver: ride:accept",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Emit event from driver socket:\n\n```javascript\nsocket.emit('ride:accept', { rideId: '<rideId>' }, callback);\n```"
+        },
+        {
+          "name": "Driver: ride:arrived",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Emit event from driver socket:\n\n```javascript\nsocket.emit('ride:arrived', { rideId: '<rideId>' }, callback);\n```"
+        },
+        {
+          "name": "Driver: ride:verify_otp",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Emit event from driver socket:\n\n```javascript\nsocket.emit('ride:verify_otp', { rideId: '<rideId>', otp: '1234' }, callback);\n```"
+        },
+        {
+          "name": "Driver: ride:complete",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Emit event from driver socket:\n\n```javascript\nsocket.emit('ride:complete', { rideId: '<rideId>' }, callback);\n```"
+        },
+        {
+          "name": "Driver: ride:cancel",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Emit event from driver socket:\n\n```javascript\nsocket.emit('ride:cancel', { rideId: '<rideId>', reason: 'Unable to continue' }, callback);\n```"
+        },
+        {
+          "name": "Driver: driver:location_update",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Emit event from driver socket:\n\n```javascript\nsocket.emit('driver:location_update', { lat: 23.8103, lng: 90.4125, rideId: '<rideId>' });\n```"
+        },
+        {
+          "name": "Driver: driver:reject_ride",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Emit event from driver socket:\n\n```javascript\nsocket.emit('driver:reject_ride', { rideId: '<rideId>' });\n```"
+        },
+        {
+          "name": "Rider Event: ride:driver_assigned",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Server emits this event to the rider when a driver is assigned. Example payload:\n\n```json\n{\n  \"rideId\": \"<rideId>\",\n  \"driver\": { id, name, phone, avatar, vehicleType, vehicleNumber, vehicleColor, rating, location },\n  \"estimatedArrival\": \"5 mins\"\n}\n```"
+        },
+        {
+          "name": "Rider Event: ride:driver_arrived",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Server emits when the driver arrives. Payload: `{ rideId }`."
+        },
+        {
+          "name": "Rider Event: ride:started",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Server emits when the ride starts. Payload: `{ rideId }`."
+        },
+        {
+          "name": "Rider Event: ride:completed",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Server emits when the ride completes. Payload: `{ rideId, fare, paymentMethod }`."
+        },
+        {
+          "name": "Rider Event: ride:cancelled",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Server emits when a ride is cancelled. Payload: `{ rideId, cancelledBy, reason? }`."
+        },
+        {
+          "name": "Rider Event: ride:driver_cancelled",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Server emits when a driver cancels an assigned ride. Payload: `{ rideId, cancelledBy, reason? }`."
+        },
+        {
+          "name": "Rider Event: driver:location",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Server emits live driver location updates. Payload: `{ lat, lng, rideId }`."
+        },
+        {
+          "name": "Rider Event: rider:pong",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Server replies to rider ping. Payload: `{ timestamp }`."
+        },
+        {
+          "name": "Driver Event: ride:assigned",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{ws_url}}" }
+          },
+          "description": "Server emits when a ride is assigned to a driver. Payload: `{ rideId, pickup, drop, riderId }`."
         }
       ]
     }
-  ],
-  "variable": [
-    { "key": "base_url", "value": "http://localhost:3000" },
-    { "key": "ws_url", "value": "ws://localhost:3000" }
   ]
 }
