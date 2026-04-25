@@ -221,8 +221,8 @@ describe("POST /api/auth/verify-otp", () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.role).toBe("driver");
     expect(res.body.data).toHaveProperty("accessToken");
-    expect(res.body.data).toHaveProperty("walletBalance", 0);
-    expect(res.body.data.user).toHaveProperty("walletBalance", 0);
+    expect(res.body.data).toHaveProperty("walletBalance", 3000);
+    expect(res.body.data.user).toHaveProperty("walletBalance", 3000);
   });
 
   it("should return wallet balance on existing driver login", async () => {

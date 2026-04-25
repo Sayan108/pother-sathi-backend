@@ -187,8 +187,7 @@ export function registerRiderSocketHandlers(
         couponCode,
         paymentMethod,
         otp,
-        status: "driver_assigned",
-        driverAssignedAt: new Date(),
+        status: "searching",
       });
 
       // Notify driver if online. Prefer the in-memory socket map, fallback to DB socketId.
@@ -200,6 +199,11 @@ export function registerRiderSocketHandlers(
           rideId: ride._id,
           pickup,
           drop,
+          fare: ride.fare,
+          platformFee: ride.platformFee,
+          income: ride.driverEarning,
+          driverEarning: ride.driverEarning,
+          paymentMethod: ride.paymentMethod,
           riderId,
         });
       }
@@ -208,7 +212,7 @@ export function registerRiderSocketHandlers(
         rideId: ride._id,
         otp,
         fareBreakdown,
-        status: "driver_assigned",
+        status: "searching",
         driver: {
           _id: assignedDriver._id,
           name: assignedDriver.name,

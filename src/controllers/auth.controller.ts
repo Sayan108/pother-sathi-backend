@@ -335,6 +335,7 @@ export async function verifyOTPHandler(
           phone,
           countryCode,
           accountStatus: "incomplete",
+          walletBalance: env.DRIVER_VERIFICATION_BONUS,
         });
         try {
           await driver.save({ validateBeforeSave: false });
@@ -348,7 +349,7 @@ export async function verifyOTPHandler(
               isActive: true,
               isOnline: false,
               isAvailable: false,
-              walletBalance: 0,
+              walletBalance: env.DRIVER_VERIFICATION_BONUS,
               totalEarnings: 0,
               rating: 5.0,
               totalRatings: 0,
@@ -362,6 +363,16 @@ export async function verifyOTPHandler(
             throw saveError;
           }
         }
+        await Transaction.create({
+          userId: driver._id,
+          userModel: "Driver",
+          type: "wallet_recharge",
+          amount: env.DRIVER_VERIFICATION_BONUS,
+          balanceBefore: 0,
+          balanceAfter: env.DRIVER_VERIFICATION_BONUS,
+          description: "Driver signup wallet credit",
+          status: "completed",
+        });
         isNewUser = true;
       } else if (!driver.isVerified) {
         driver.accountStatus = "pending";

@@ -40,17 +40,22 @@ export async function registerDriverSocketHandlers(
         cb({ success: false, error: "Ride is no longer available" });
         return;
       }
+      if (ride.driverId && ride.driverId.toString() !== driverId) {
+        cb({ success: false, error: "Ride is not assigned to you" });
+        return;
+      }
       // Mark driver as unavailable
       const { Driver } = require("../models/Driver");
       const driver = await Driver.findById(driverId);
-      if (!driver.isOnline || !driver.isAvailable) {
+      if (!driver?.isOnline || !driver?.isAvailable) {
         cb({
           success: false,
           error: "You must be online and available to accept rides",
         });
         return;
       }
-      ride.driverId = new (require("mongoose").Types.ObjectId)(driverId);
+      ride.driverId =
+        ride.driverId || new (require("mongoose").Types.ObjectId)(driverId);
       ride.status = "driver_assigned";
       ride.driverAssignedAt = new Date();
       await ride.save();
@@ -58,26 +63,31 @@ export async function registerDriverSocketHandlers(
       driver.currentRideId = ride._id;
       await driver.save();
       // Notify rider
-      const { riderSocketMap } = require("../controllers/ride.controller");
-      const riderSocketId = riderSocketMap.get(ride.riderId.toString());
-      if (riderSocketId) {
-        io.to(riderSocketId).emit("ride:driver_assigned", {
-          rideId: ride._id,
-          driver: {
-            id: driver._id,
-            name: driver.name,
-            phone: driver.phone,
-            avatar: driver.avatar,
-            vehicleType: driver.vehicleType,
-            vehicleNumber: driver.vehicleNumber,
-            vehicleColor: driver.vehicleColor,
-            rating: driver.rating,
-            location: driver.location.coordinates,
-          },
-          estimatedArrival: "5 mins",
-        });
-      }
-      cb({ success: true, rideId: ride._id });
+      const riderRoom = `rider:${ride.riderId.toString()}`;
+      io.to(riderRoom).emit("ride:driver_assigned", {
+        rideId: ride._id,
+        driver: {
+          id: driver._id,
+          name: driver.name,
+          phone: driver.phone,
+          avatar: driver.avatar,
+          vehicleType: driver.vehicleType,
+          vehicleNumber: driver.vehicleNumber,
+          vehicleColor: driver.vehicleColor,
+          rating: driver.rating,
+          location: driver.location.coordinates,
+        },
+        estimatedArrival: "5 mins",
+      });
+      cb({
+        success: true,
+        rideId: ride._id,
+        pickup: ride.pickup,
+        drop: ride.drop,
+        fare: ride.fare,
+        income: ride.driverEarning,
+        driverEarning: ride.driverEarning,
+      });
     } catch (err) {
       logger.error("ride:accept error:", err);
       cb({ success: false, error: "Unable to accept ride" });
@@ -222,38 +232,26 @@ export async function registerDriverSocketHandlers(
       const driver = await Driver.findById(driverId);
       if (driver) {
         const balanceBefore = driver.walletBalance;
-        driver.walletBalance =
-          Math.max(0, driver.walletBalance - ride.platformFee) +
-          ride.driverEarning;
+        driver.walletBalance = Math.max(
+          0,
+          driver.walletBalance - ride.platformFee,
+        );
         driver.totalEarnings += ride.driverEarning;
         driver.totalRides += 1;
         driver.isAvailable = true;
         driver.currentRideId = undefined;
         await driver.save();
-        await Transaction.create([
-          {
-            userId: driver._id,
-            userModel: "Driver",
-            type: "ride_earning",
-            amount: ride.driverEarning,
-            balanceBefore,
-            balanceAfter: driver.walletBalance,
-            rideId: ride._id,
-            description: `Ride earnings from ${ride.pickup.address || "pickup"} to ${ride.drop.address || "drop"}`,
-            status: "completed",
-          },
-          {
-            userId: driver._id,
-            userModel: "Driver",
-            type: "platform_fee",
-            amount: -ride.platformFee,
-            balanceBefore,
-            balanceAfter: driver.walletBalance,
-            rideId: ride._id,
-            description: `Platform fee for ride ${ride._id}`,
-            status: "completed",
-          },
-        ]);
+        await Transaction.create({
+          userId: driver._id,
+          userModel: "Driver",
+          type: "platform_fee",
+          amount: -ride.platformFee,
+          balanceBefore,
+          balanceAfter: driver.walletBalance,
+          rideId: ride._id,
+          description: `Platform fee deduction for ride ${ride._id}`,
+          status: "completed",
+        });
       }
 
       // Update rider's total rides

@@ -79,19 +79,27 @@ export async function verifyDriver(req: Request, res: Response): Promise<void> {
   const balanceBefore = driver.walletBalance;
   driver.accountStatus = "verified";
   driver.isVerified = true;
-  driver.walletBalance += env.DRIVER_VERIFICATION_BONUS;
+  const bonusCredit = Math.max(
+    0,
+    env.DRIVER_VERIFICATION_BONUS - driver.walletBalance,
+  );
+  if (bonusCredit > 0) {
+    driver.walletBalance += bonusCredit;
+  }
   await driver.save();
 
-  await Transaction.create({
-    userId: driver._id,
-    userModel: "Driver",
-    type: "wallet_recharge",
-    amount: env.DRIVER_VERIFICATION_BONUS,
-    balanceBefore,
-    balanceAfter: driver.walletBalance,
-    description: `Driver verified by admin and credited verification bonus`,
-    status: "completed",
-  });
+  if (bonusCredit > 0) {
+    await Transaction.create({
+      userId: driver._id,
+      userModel: "Driver",
+      type: "wallet_recharge",
+      amount: bonusCredit,
+      balanceBefore,
+      balanceAfter: driver.walletBalance,
+      description: `Driver verified by admin and credited verification bonus`,
+      status: "completed",
+    });
+  }
 
   sendSuccess(res, "Driver verified and wallet credited", {
     driverId: driver._id,
