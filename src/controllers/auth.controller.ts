@@ -483,6 +483,25 @@ export async function logoutHandler(
 }
 
 /**
+ * Sanitize a device ID supplied by the client.
+ * Ensures the value is a plain string to prevent NoSQL injection in MongoDB queries.
+ * Returns undefined if the input is falsy or empty after sanitization.
+ */
+function sanitizeDeviceId(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  const sanitized = String(raw)
+    .replace(/[^\w.\-]/g, "")
+    .slice(0, 200);
+  return sanitized || undefined;
+}
+
+/** Phone placeholder prefix for social (rider) accounts. */
+const SOCIAL_PHONE_PREFIX = "s";
+
+/** Phone placeholder prefix for Google-authenticated driver stubs. */
+const DRIVER_PHONE_PREFIX = "d";
+
+/**
  * POST /api/auth/social-login
  * Rider social sign-in via Google or Facebook.
  * The mobile client authenticates with the provider and sends the ID token here.
@@ -505,10 +524,7 @@ export async function socialLoginHandler(
   try {
     const identity = await verifyToken(provider, idToken);
 
-    // Sanitize deviceId to prevent NoSQL injection — ensure it is a plain string
-    const safeDeviceId = deviceId
-      ? String(deviceId).replace(/[^\w.\-]/g, "").slice(0, 200)
-      : undefined;
+    const safeDeviceId = sanitizeDeviceId(deviceId);
 
     // Prevent device-level fraud: same device → existing account
     if (safeDeviceId) {
@@ -563,7 +579,7 @@ export async function socialLoginHandler(
         // Create a new rider account.
         // Phone is not available from social login — use a hash-based placeholder
         // until the user links their real phone number.
-        const phonePlaceholder = `s${crypto
+        const phonePlaceholder = `${SOCIAL_PHONE_PREFIX}${crypto
           .createHash("sha256")
           .update(identity.providerId)
           .digest("hex")
@@ -660,10 +676,7 @@ export async function driverGoogleLoginHandler(
   try {
     const identity = await verifyToken("google", idToken);
 
-    // Sanitize deviceId to prevent NoSQL injection — ensure it is a plain string
-    const safeDeviceId = deviceId
-      ? String(deviceId).replace(/[^\w.\-]/g, "").slice(0, 200)
-      : undefined;
+    const safeDeviceId = sanitizeDeviceId(deviceId);
 
     // Device-level fraud check: block same device registering multiple accounts
     if (safeDeviceId) {
@@ -687,7 +700,7 @@ export async function driverGoogleLoginHandler(
       // Create a stub driver record; full registration happens via /api/driver/register.
       // Phone is not available from Google Sign-In — use a hash-based placeholder
       // until the driver links their real number during KYC.
-      const phonePlaceholder = `d${crypto
+      const phonePlaceholder = `${DRIVER_PHONE_PREFIX}${crypto
         .createHash("sha256")
         .update(identity.providerId)
         .digest("hex")
