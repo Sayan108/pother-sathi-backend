@@ -143,7 +143,8 @@ describe("POST /api/driver/register", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.success).toBe(false);
-    // Error message should be in Bengali
+    // Error message should be in Bengali and mention Aadhaar card
+    expect(res.body.message).toMatch(/আধার কার্ড/);
     expect(res.body.message).toMatch(/নিবন্ধিত/);
     await Driver.deleteOne({ _id: existingDriver._id });
   });
@@ -172,6 +173,8 @@ describe("POST /api/driver/register", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.success).toBe(false);
+    // Error message should be in Bengali and mention Driving Licence
+    expect(res.body.message).toMatch(/ড্রাইভিং লাইসেন্স/);
     expect(res.body.message).toMatch(/নিবন্ধিত/);
   });
 

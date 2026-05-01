@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { body } from "express-validator";
+import crypto from "crypto";
 import { User } from "../models/User";
 import { Driver } from "../models/Driver";
 import { Transaction } from "../models/Transaction";
@@ -504,9 +505,17 @@ export async function socialLoginHandler(
   try {
     const identity = await verifyToken(provider, idToken);
 
+    // Sanitize deviceId to prevent NoSQL injection — ensure it is a plain string
+    const safeDeviceId = deviceId
+      ? String(deviceId).replace(/[^\w.\-]/g, "").slice(0, 200)
+      : undefined;
+
     // Prevent device-level fraud: same device → existing account
-    if (deviceId) {
-      const existingByDevice = await User.findOne({ deviceId, role: "rider" });
+    if (safeDeviceId) {
+      const existingByDevice = await User.findOne({
+        deviceId: safeDeviceId,
+        role: "rider",
+      });
       if (existingByDevice) {
         const tokenPayload = {
           id: existingByDevice._id.toString(),
@@ -548,14 +557,19 @@ export async function socialLoginHandler(
         // Link the social provider to the existing account
         (user as any)[providerField] = identity.providerId;
         if (!user.avatar && identity.picture) user.avatar = identity.picture;
-        if (deviceId) user.deviceId = deviceId;
+        if (safeDeviceId) user.deviceId = safeDeviceId;
         await user.save();
       } else {
-        // Create a new rider account
+        // Create a new rider account.
+        // Phone is not available from social login — use a hash-based placeholder
+        // until the user links their real phone number.
+        const phonePlaceholder = `s${crypto
+          .createHash("sha256")
+          .update(identity.providerId)
+          .digest("hex")
+          .slice(0, 10)}`;
         const newUser: Record<string, unknown> = {
-          // Phone is not available from social login; use email as unique fallback
-          // A placeholder phone is generated until user adds their real phone
-          phone: `social_${identity.providerId.slice(-10)}`,
+          phone: phonePlaceholder,
           countryCode: "+91",
           role: "rider",
           isVerified: true,
@@ -566,7 +580,7 @@ export async function socialLoginHandler(
         if (identity.name) newUser.name = identity.name;
         if (identity.email) newUser.email = identity.email;
         if (identity.picture) newUser.avatar = identity.picture;
-        if (deviceId) newUser.deviceId = deviceId;
+        if (safeDeviceId) newUser.deviceId = safeDeviceId;
 
         user = await User.create(newUser);
         await Transaction.create({
@@ -583,8 +597,8 @@ export async function socialLoginHandler(
       }
     } else {
       // Update device ID if provided
-      if (deviceId && user.deviceId !== deviceId) {
-        user.deviceId = deviceId;
+      if (safeDeviceId && user.deviceId !== safeDeviceId) {
+        user.deviceId = safeDeviceId;
         await user.save();
       }
     }
@@ -646,9 +660,14 @@ export async function driverGoogleLoginHandler(
   try {
     const identity = await verifyToken("google", idToken);
 
+    // Sanitize deviceId to prevent NoSQL injection — ensure it is a plain string
+    const safeDeviceId = deviceId
+      ? String(deviceId).replace(/[^\w.\-]/g, "").slice(0, 200)
+      : undefined;
+
     // Device-level fraud check: block same device registering multiple accounts
-    if (deviceId) {
-      const existingByDevice = await Driver.findOne({ deviceId });
+    if (safeDeviceId) {
+      const existingByDevice = await Driver.findOne({ deviceId: safeDeviceId });
       if (
         existingByDevice &&
         existingByDevice.googleId !== identity.providerId
@@ -665,10 +684,16 @@ export async function driverGoogleLoginHandler(
     let isNewDriver = false;
 
     if (!driver) {
-      // Create a stub driver record; full registration happens via /api/driver/register
+      // Create a stub driver record; full registration happens via /api/driver/register.
+      // Phone is not available from Google Sign-In — use a hash-based placeholder
+      // until the driver links their real number during KYC.
+      const phonePlaceholder = `d${crypto
+        .createHash("sha256")
+        .update(identity.providerId)
+        .digest("hex")
+        .slice(0, 10)}`;
       driver = await Driver.create({
-        // Placeholder phone — driver must link their real number during KYC
-        phone: `g_${identity.providerId.slice(-10)}`,
+        phone: phonePlaceholder,
         countryCode: "+91",
         googleId: identity.providerId,
         accountStatus: "incomplete",
@@ -684,12 +709,12 @@ export async function driverGoogleLoginHandler(
         ...(identity.name ? { name: identity.name } : {}),
         ...(identity.email ? { email: identity.email } : {}),
         ...(identity.picture ? { avatar: identity.picture } : {}),
-        ...(deviceId ? { deviceId } : {}),
+        ...(safeDeviceId ? { deviceId: safeDeviceId } : {}),
       });
       isNewDriver = true;
     } else {
-      if (deviceId && driver.deviceId !== deviceId) {
-        driver.deviceId = deviceId;
+      if (safeDeviceId && driver.deviceId !== safeDeviceId) {
+        driver.deviceId = safeDeviceId;
         await driver.save();
       }
     }

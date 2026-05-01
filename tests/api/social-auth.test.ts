@@ -122,9 +122,11 @@ describe("POST /api/auth/social-login — rider Google Sign-In", () => {
 
   it("should track deviceId and return existing account for same device", async () => {
     // First sign-in with deviceId
-    await request(app)
+    const firstRes = await request(app)
       .post("/api/auth/social-login")
       .send({ idToken: "mock-google-token", provider: "google", deviceId: "device-abc" });
+    expect(firstRes.status).toBe(201);
+    const firstEmail = firstRes.body.data.user.email;
 
     // Different Google account, same device
     mockGoogleProvider.verify.mockResolvedValueOnce({
@@ -140,6 +142,8 @@ describe("POST /api/auth/social-login — rider Google Sign-In", () => {
     // Should return the first account (same device)
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+    // The returned account should be the first user's account (matched by device)
+    expect(res.body.data.user.email).toBe(firstEmail);
   });
 
   it("should link Google ID to existing account found by email", async () => {

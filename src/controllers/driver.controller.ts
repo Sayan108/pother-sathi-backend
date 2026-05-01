@@ -14,6 +14,18 @@ import {
   sendConflict,
 } from "../utils/response";
 import { logger } from "../utils/logger";
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Normalise a Driving Licence number for consistent storage and comparison. */
+function normalizeLicenseNumber(raw: string): string {
+  return raw.trim().toUpperCase();
+}
+
+/** Normalise an Aadhaar number for consistent storage and comparison. */
+function normalizeAadhaarNumber(raw: string): string {
+  return raw.trim().replace(/\s/g, "");
+}
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 export const registerDriverValidation = [
@@ -153,13 +165,16 @@ export async function registerDriver(
 
   // ── KYC Duplicate Check ─────────────────────────────────────────────────────
   // Check if Aadhaar or Driving Licence is already registered to another driver.
+  const normalizedAadhaar = normalizeAadhaarNumber(aadhaarNumber);
+  const normalizedLicense = normalizeLicenseNumber(licenseNumber);
+
   const [existingAadhaar, existingLicense] = await Promise.all([
     Driver.findOne({
-      aadhaarNumber: aadhaarNumber.trim(),
+      aadhaarNumber: normalizedAadhaar,
       _id: { $ne: driver._id },
     }).lean(),
     Driver.findOne({
-      licenseNumber: licenseNumber.trim().toUpperCase(),
+      licenseNumber: normalizedLicense,
       _id: { $ne: driver._id },
     }).lean(),
   ]);
@@ -187,8 +202,8 @@ export async function registerDriver(
   driver.vehicleType = vehicleType;
   driver.vehicleModel = vehicleModel;
   driver.vehicleNumber = vehicleNumber.toUpperCase();
-  driver.licenseNumber = licenseNumber.trim().toUpperCase();
-  driver.aadhaarNumber = aadhaarNumber.trim();
+  driver.licenseNumber = normalizedLicense;
+  driver.aadhaarNumber = normalizedAadhaar;
   driver.selfieDocument = selfieDocument;
   if (vehicleColor) driver.vehicleColor = vehicleColor;
   if (vehicleYear) driver.vehicleYear = vehicleYear;

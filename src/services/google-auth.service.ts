@@ -54,6 +54,7 @@ class GoogleIdentityProvider implements IdentityProvider {
   private client: OAuth2Client;
 
   constructor() {
+    // Pass clientId when configured; OAuth2Client works without it in dev mode
     this.client = new OAuth2Client(env.GOOGLE_CLIENT_ID || undefined);
   }
 
@@ -61,7 +62,7 @@ class GoogleIdentityProvider implements IdentityProvider {
     try {
       const ticket = await this.client.verifyIdToken({
         idToken,
-        // audience validation — skipped when GOOGLE_CLIENT_ID is not set (dev)
+        // audience validation — only applied when GOOGLE_CLIENT_ID is configured
         ...(env.GOOGLE_CLIENT_ID ? { audience: env.GOOGLE_CLIENT_ID } : {}),
       });
 
