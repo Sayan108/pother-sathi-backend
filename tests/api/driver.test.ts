@@ -67,7 +67,7 @@ beforeEach(async () => {
 // ── POST /api/driver/register ──────────────────────────────────────────────────
 
 describe("POST /api/driver/register", () => {
-  it("should register driver with valid data", async () => {
+  it("should register driver with valid KYC data", async () => {
     const start = Date.now();
     const res = await request(app)
       .post("/api/driver/register")
@@ -77,7 +77,9 @@ describe("POST /api/driver/register", () => {
         vehicleType: "auto",
         vehicleModel: "Bajaj RE",
         vehicleNumber: "WB01A5678",
-        licenseNumber: "DL123456",
+        licenseNumber: "DL1234560001",
+        aadhaarNumber: "123456789012",
+        selfieDocument: "https://example.com/selfie.jpg",
       });
     const time = Date.now() - start;
 
@@ -88,14 +90,89 @@ describe("POST /api/driver/register", () => {
     );
   });
 
-  it("should return 400 for missing required fields", async () => {
+  it("should return 400 for missing required fields (no aadhaar/license/selfie)", async () => {
     const res = await request(app)
       .post("/api/driver/register")
       .set("Authorization", `Bearer ${driverToken}`)
-      .send({ name: "John Driver" }); // Missing vehicleType, vehicleModel, vehicleNumber
+      .send({ name: "John Driver" }); // Missing vehicleType, vehicleModel, vehicleNumber, aadhaarNumber, etc.
 
     expect([400, 422]).toContain(res.status);
     expect(res.body.success).toBe(false);
+  });
+
+  it("should return 400 for invalid aadhaar number (not 12 digits)", async () => {
+    const res = await request(app)
+      .post("/api/driver/register")
+      .set("Authorization", `Bearer ${driverToken}`)
+      .send({
+        name: "John Driver",
+        vehicleType: "auto",
+        vehicleModel: "Bajaj RE",
+        vehicleNumber: "WB01A5678",
+        licenseNumber: "DL1234560001",
+        aadhaarNumber: "12345", // Invalid — too short
+        selfieDocument: "https://example.com/selfie.jpg",
+      });
+
+    expect([400, 422]).toContain(res.status);
+    expect(res.body.success).toBe(false);
+  });
+
+  it("should return 409 when Aadhaar number is already registered to another driver", async () => {
+    // First driver registers with aadhaarNumber
+    const existingDriver = await Driver.create({
+      phone: "9876543299",
+      countryCode: "+91",
+      accountStatus: "pending",
+      aadhaarNumber: "999999999999",
+      isActive: true,
+    });
+
+    const res = await request(app)
+      .post("/api/driver/register")
+      .set("Authorization", `Bearer ${driverToken}`)
+      .send({
+        name: "John Driver",
+        vehicleType: "auto",
+        vehicleModel: "Bajaj RE",
+        vehicleNumber: "WB01A5678",
+        licenseNumber: "DL1234560001",
+        aadhaarNumber: "999999999999", // Duplicate
+        selfieDocument: "https://example.com/selfie.jpg",
+      });
+
+    expect(res.status).toBe(409);
+    expect(res.body.success).toBe(false);
+    // Error message should be in Bengali
+    expect(res.body.message).toMatch(/নিবন্ধিত/);
+    await Driver.deleteOne({ _id: existingDriver._id });
+  });
+
+  it("should return 409 when Driving Licence is already registered to another driver", async () => {
+    await Driver.create({
+      phone: "9876543298",
+      countryCode: "+91",
+      accountStatus: "pending",
+      licenseNumber: "DL9999990001",
+      isActive: true,
+    });
+
+    const res = await request(app)
+      .post("/api/driver/register")
+      .set("Authorization", `Bearer ${driverToken}`)
+      .send({
+        name: "John Driver",
+        vehicleType: "auto",
+        vehicleModel: "Bajaj RE",
+        vehicleNumber: "WB01A5678",
+        licenseNumber: "DL9999990001", // Duplicate
+        aadhaarNumber: "123456789012",
+        selfieDocument: "https://example.com/selfie.jpg",
+      });
+
+    expect(res.status).toBe(409);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/নিবন্ধিত/);
   });
 
   it("should return 400 for invalid vehicle type", async () => {
@@ -107,6 +184,9 @@ describe("POST /api/driver/register", () => {
         vehicleType: "helicopter", // Invalid
         vehicleModel: "Bajaj RE",
         vehicleNumber: "WB01A5678",
+        licenseNumber: "DL1234560001",
+        aadhaarNumber: "123456789012",
+        selfieDocument: "https://example.com/selfie.jpg",
       });
 
     expect([400, 422]).toContain(res.status);
@@ -156,7 +236,9 @@ describe("POST /api/driver/register", () => {
         vehicleType: "auto",
         vehicleModel: "Bajaj RE",
         vehicleNumber: "WB01A5678",
-        licenseNumber: "DL123456",
+        licenseNumber: "DL1234560001",
+        aadhaarNumber: "123456789012",
+        selfieDocument: "https://example.com/selfie.jpg",
         referralCode: "ULREF1",
       });
 
@@ -178,7 +260,9 @@ describe("PATCH /api/driver/activate", () => {
         vehicleType: "auto",
         vehicleModel: "Bajaj RE",
         vehicleNumber: "WB01A5678",
-        licenseNumber: "DL123456",
+        licenseNumber: "DL1234560001",
+        aadhaarNumber: "123456789012",
+        selfieDocument: "https://example.com/selfie.jpg",
         licenseDocument: "https://example.com/license.jpg",
         vehicleDocument: "https://example.com/vehicle.jpg",
       });
@@ -192,7 +276,7 @@ describe("PATCH /api/driver/activate", () => {
     expect(res.body.data.accountStatus).toBe("verified");
   });
 
-  it("should return 400 when required documents are missing", async () => {
+  it("should return 400 when licenseDocument/vehicleDocument are missing", async () => {
     await request(app)
       .post("/api/driver/register")
       .set("Authorization", `Bearer ${driverToken}`)
@@ -201,6 +285,10 @@ describe("PATCH /api/driver/activate", () => {
         vehicleType: "auto",
         vehicleModel: "Bajaj RE",
         vehicleNumber: "WB01A5678",
+        licenseNumber: "DL1234560001",
+        aadhaarNumber: "123456789012",
+        selfieDocument: "https://example.com/selfie.jpg",
+        // licenseDocument and vehicleDocument intentionally omitted
       });
 
     const res = await request(app)

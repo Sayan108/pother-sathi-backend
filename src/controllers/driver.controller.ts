@@ -32,7 +32,18 @@ export const registerDriverValidation = [
     .trim()
     .notEmpty()
     .withMessage("Vehicle number is required"),
-  body("licenseNumber").optional().trim(),
+  body("licenseNumber")
+    .trim()
+    .notEmpty()
+    .withMessage("Driving licence number is required"),
+  body("aadhaarNumber")
+    .trim()
+    .matches(/^\d{12}$/)
+    .withMessage("Aadhaar number must be exactly 12 digits"),
+  body("selfieDocument")
+    .trim()
+    .isURL()
+    .withMessage("selfieDocument must be a valid URL"),
   body("licenseExpiry")
     .optional()
     .isISO8601()
@@ -81,6 +92,7 @@ export const rechargeWalletValidation = [
 /**
  * POST /api/driver/register
  * Complete driver registration (multi-step form submission).
+ * Performs duplicate Aadhaar / Driving Licence checks before saving.
  */
 export async function registerDriver(
   req: Request,
@@ -105,6 +117,8 @@ export async function registerDriver(
     vehicleColor,
     vehicleYear,
     licenseNumber,
+    aadhaarNumber,
+    selfieDocument,
     serviceArea,
     email,
     gender,
@@ -122,7 +136,9 @@ export async function registerDriver(
     vehicleNumber: string;
     vehicleColor?: string;
     vehicleYear?: string;
-    licenseNumber?: string;
+    licenseNumber: string;
+    aadhaarNumber: string;
+    selfieDocument: string;
     serviceArea?: string;
     email?: string;
     gender?: string;
@@ -135,13 +151,47 @@ export async function registerDriver(
     avatar?: string;
   };
 
+  // ── KYC Duplicate Check ─────────────────────────────────────────────────────
+  // Check if Aadhaar or Driving Licence is already registered to another driver.
+  const [existingAadhaar, existingLicense] = await Promise.all([
+    Driver.findOne({
+      aadhaarNumber: aadhaarNumber.trim(),
+      _id: { $ne: driver._id },
+    }).lean(),
+    Driver.findOne({
+      licenseNumber: licenseNumber.trim().toUpperCase(),
+      _id: { $ne: driver._id },
+    }).lean(),
+  ]);
+
+  if (existingAadhaar) {
+    sendError(
+      res,
+      "আপনার এই পরিচয়পত্রটি (আধার কার্ড) ইতিমধ্যে নিবন্ধিত। পুরনো অ্যাকাউন্টে লগইন করুন।",
+      409,
+    );
+    return;
+  }
+
+  if (existingLicense) {
+    sendError(
+      res,
+      "আপনার এই পরিচয়পত্রটি (ড্রাইভিং লাইসেন্স) ইতিমধ্যে নিবন্ধিত। পুরনো অ্যাকাউন্টে লগইন করুন।",
+      409,
+    );
+    return;
+  }
+  // ────────────────────────────────────────────────────────────────────────────
+
   driver.name = name;
   driver.vehicleType = vehicleType;
   driver.vehicleModel = vehicleModel;
   driver.vehicleNumber = vehicleNumber.toUpperCase();
+  driver.licenseNumber = licenseNumber.trim().toUpperCase();
+  driver.aadhaarNumber = aadhaarNumber.trim();
+  driver.selfieDocument = selfieDocument;
   if (vehicleColor) driver.vehicleColor = vehicleColor;
   if (vehicleYear) driver.vehicleYear = vehicleYear;
-  if (licenseNumber) driver.licenseNumber = licenseNumber;
   if (serviceArea) driver.serviceArea = serviceArea;
   if (email) driver.email = email;
   if (gender) driver.gender = gender as "male" | "female" | "other";
@@ -190,7 +240,7 @@ export async function registerDriver(
 
   sendSuccess(
     res,
-    "Registration submitted. Your account is pending verification.",
+    "KYC submitted successfully. Your application is pending admin review.",
     {
       accountStatus: driver.accountStatus,
       id: driver._id,

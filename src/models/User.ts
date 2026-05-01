@@ -12,6 +12,14 @@ export interface IUser extends Document {
   avatar?: string;
   dob?: Date;
   gender?: "male" | "female" | "other";
+
+  // Social / OAuth identity providers
+  googleId?: string; // Google account sub (unique)
+  facebookId?: string; // Facebook user ID (unique)
+
+  // Device fingerprint — prevents multi-account fraud
+  deviceId?: string;
+
   rating: number;
   totalRatings: number;
   totalRides: number;
@@ -68,6 +76,14 @@ const userSchema = new Schema<IUser>(
     avatar: { type: String },
     dob: { type: Date },
     gender: { type: String, enum: ["male", "female", "other"] },
+
+    // Social / OAuth
+    googleId: { type: String, unique: true, sparse: true },
+    facebookId: { type: String, unique: true, sparse: true },
+
+    // Device fingerprint
+    deviceId: { type: String },
+
     rating: { type: Number, default: 5.0, min: 0, max: 5 },
     totalRatings: { type: Number, default: 0 },
     totalRides: { type: Number, default: 0 },

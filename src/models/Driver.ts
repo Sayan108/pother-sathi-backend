@@ -19,6 +19,16 @@ export interface IDriver extends Document {
   gender?: "male" | "female" | "other";
   nidNumber?: string;
 
+  // KYC — India-specific identity documents
+  aadhaarNumber?: string; // Aadhaar card number (unique)
+  selfieDocument?: string; // URL of KYC selfie
+
+  // Social / OAuth identity providers
+  googleId?: string; // Google account sub (unique)
+
+  // Device fingerprint — prevents multi-account fraud
+  deviceId?: string;
+
   // Vehicle
   vehicleType?: VehicleType;
   vehicleModel?: string;
@@ -27,7 +37,7 @@ export interface IDriver extends Document {
   vehicleYear?: string;
 
   // Documents
-  licenseNumber?: string;
+  licenseNumber?: string; // Driving Licence number (unique)
   licenseExpiry?: Date;
   nidDocument?: string; // URL
   licenseDocument?: string; // URL
@@ -104,6 +114,16 @@ const driverSchema = new Schema<IDriver>(
     gender: { type: String, enum: ["male", "female", "other"] },
     nidNumber: { type: String },
 
+    // KYC — India-specific identity documents
+    aadhaarNumber: { type: String, unique: true, sparse: true, trim: true },
+    selfieDocument: { type: String },
+
+    // Social / OAuth
+    googleId: { type: String, unique: true, sparse: true },
+
+    // Device fingerprint
+    deviceId: { type: String },
+
     vehicleType: {
       type: String,
       enum: ["bike", "auto", "toto", "car", "delivery"],
@@ -113,7 +133,7 @@ const driverSchema = new Schema<IDriver>(
     vehicleColor: { type: String },
     vehicleYear: { type: String },
 
-    licenseNumber: { type: String },
+    licenseNumber: { type: String, unique: true, sparse: true },
     licenseExpiry: { type: Date },
     nidDocument: { type: String },
     licenseDocument: { type: String },

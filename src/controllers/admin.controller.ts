@@ -47,7 +47,7 @@ export async function getPendingDrivers(
   const [drivers, total] = await Promise.all([
     Driver.find({ accountStatus: "pending" })
       .select(
-        "phone countryCode name vehicleType vehicleModel vehicleNumber accountStatus walletBalance",
+        "phone countryCode name vehicleType vehicleModel vehicleNumber accountStatus walletBalance aadhaarNumber licenseNumber nidDocument licenseDocument selfieDocument vehicleDocument createdAt",
       )
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -79,29 +79,27 @@ export async function verifyDriver(req: Request, res: Response): Promise<void> {
   const balanceBefore = driver.walletBalance;
   driver.accountStatus = "verified";
   driver.isVerified = true;
-  const bonusCredit = Math.max(
-    0,
-    env.DRIVER_VERIFICATION_BONUS - driver.walletBalance,
-  );
-  if (bonusCredit > 0) {
-    driver.walletBalance += bonusCredit;
-  }
+  driver.isActive = true;
+
+  // Credit the full 3000 sign-up bonus on admin approval.
+  // The driver starts with 0 balance after the Google Sign-In flow,
+  // so the full bonus is always added here.
+  const bonusCredit = env.DRIVER_VERIFICATION_BONUS;
+  driver.walletBalance += bonusCredit;
   await driver.save();
 
-  if (bonusCredit > 0) {
-    await Transaction.create({
-      userId: driver._id,
-      userModel: "Driver",
-      type: "wallet_recharge",
-      amount: bonusCredit,
-      balanceBefore,
-      balanceAfter: driver.walletBalance,
-      description: `Driver verified by admin and credited verification bonus`,
-      status: "completed",
-    });
-  }
+  await Transaction.create({
+    userId: driver._id,
+    userModel: "Driver",
+    type: "wallet_recharge",
+    amount: bonusCredit,
+    balanceBefore,
+    balanceAfter: driver.walletBalance,
+    description: `Driver verified by admin — ₹${bonusCredit} sign-up bonus credited`,
+    status: "completed",
+  });
 
-  sendSuccess(res, "Driver verified and wallet credited", {
+  sendSuccess(res, "Driver approved and ₹" + bonusCredit + " bonus credited", {
     driverId: driver._id,
     walletBalance: driver.walletBalance,
     accountStatus: driver.accountStatus,
