@@ -63,12 +63,11 @@ export const registerDriverValidation = [
   body("serviceArea").optional().trim(),
   body("email").optional().trim().isEmail().normalizeEmail(),
   body("gender").optional().isIn(["male", "female", "other"]),
-  body("nidNumber").optional().trim(),
-  body("nidDocument")
+  body("aadhaarDocument")
     .optional()
     .trim()
     .isURL()
-    .withMessage("nidDocument must be a valid URL"),
+    .withMessage("aadhaarDocument must be a valid URL"),
   body("licenseDocument")
     .optional()
     .trim()
@@ -135,8 +134,7 @@ export async function registerDriver(
     email,
     gender,
     dob,
-    nidNumber,
-    nidDocument,
+    aadhaarDocument,
     licenseDocument,
     vehicleDocument,
     licenseExpiry,
@@ -155,8 +153,7 @@ export async function registerDriver(
     email?: string;
     gender?: string;
     dob?: Date;
-    nidNumber?: string;
-    nidDocument?: string;
+    aadhaarDocument?: string;
     licenseDocument?: string;
     vehicleDocument?: string;
     licenseExpiry?: string;
@@ -211,8 +208,7 @@ export async function registerDriver(
   if (email) driver.email = email;
   if (gender) driver.gender = gender as "male" | "female" | "other";
   if (dob) driver.dob = new Date(dob);
-  if (nidNumber) driver.nidNumber = nidNumber;
-  if (nidDocument) driver.nidDocument = nidDocument;
+  if (aadhaarDocument) driver.aadhaarDocument = aadhaarDocument;
   if (licenseDocument) driver.licenseDocument = licenseDocument;
   if (vehicleDocument) driver.vehicleDocument = vehicleDocument;
   if (licenseExpiry) driver.licenseExpiry = new Date(licenseExpiry);

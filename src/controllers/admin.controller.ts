@@ -47,7 +47,7 @@ export async function getPendingDrivers(
   const [drivers, total] = await Promise.all([
     Driver.find({ accountStatus: "pending" })
       .select(
-        "phone countryCode name vehicleType vehicleModel vehicleNumber accountStatus walletBalance aadhaarNumber licenseNumber nidDocument licenseDocument selfieDocument vehicleDocument createdAt",
+        "phone countryCode name vehicleType vehicleModel vehicleNumber accountStatus walletBalance aadhaarNumber licenseNumber aadhaarDocument licenseDocument selfieDocument vehicleDocument createdAt",
       )
       .sort({ createdAt: -1 })
       .skip(skip)
