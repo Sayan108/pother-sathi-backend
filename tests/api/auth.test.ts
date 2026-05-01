@@ -205,7 +205,7 @@ describe("POST /api/auth/verify-otp", () => {
     expect(res.body.success).toBe(false);
   });
 
-  it("should create a new driver stub account", async () => {
+  it("should create a new driver stub account with 0 wallet balance", async () => {
     await request(app)
       .post("/api/auth/send-otp")
       .send({ phone: "9876543211", countryCode: "+91", role: "driver" });
@@ -221,8 +221,9 @@ describe("POST /api/auth/verify-otp", () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.role).toBe("driver");
     expect(res.body.data).toHaveProperty("accessToken");
-    expect(res.body.data).toHaveProperty("walletBalance", 3000);
-    expect(res.body.data.user).toHaveProperty("walletBalance", 3000);
+    // Wallet starts at 0; the 3000 bonus is credited by admin on KYC approval
+    expect(res.body.data).toHaveProperty("walletBalance", 0);
+    expect(res.body.data.user).toHaveProperty("walletBalance", 0);
   });
 
   it("should return wallet balance on existing driver login", async () => {

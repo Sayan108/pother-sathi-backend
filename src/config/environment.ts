@@ -68,4 +68,7 @@ export const env = {
     process.env.DEV_SEED_ACTIVE_DRIVERS === "true" ||
     (process.env.DEV_SEED_ACTIVE_DRIVERS !== "false" &&
       process.env.NODE_ENV !== "production"),
+
+  // Google OAuth (used for social sign-in; required in production)
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
 };

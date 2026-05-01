@@ -14,6 +14,18 @@ import {
   sendConflict,
 } from "../utils/response";
 import { logger } from "../utils/logger";
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Normalise a Driving Licence number for consistent storage and comparison. */
+function normalizeLicenseNumber(raw: string): string {
+  return raw.trim().toUpperCase();
+}
+
+/** Normalise an Aadhaar number for consistent storage and comparison. */
+function normalizeAadhaarNumber(raw: string): string {
+  return raw.trim().replace(/\s/g, "");
+}
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 export const registerDriverValidation = [
@@ -32,7 +44,18 @@ export const registerDriverValidation = [
     .trim()
     .notEmpty()
     .withMessage("Vehicle number is required"),
-  body("licenseNumber").optional().trim(),
+  body("licenseNumber")
+    .trim()
+    .notEmpty()
+    .withMessage("Driving licence number is required"),
+  body("aadhaarNumber")
+    .trim()
+    .matches(/^\d{12}$/)
+    .withMessage("Aadhaar number must be exactly 12 digits"),
+  body("selfieDocument")
+    .trim()
+    .isURL()
+    .withMessage("selfieDocument must be a valid URL"),
   body("licenseExpiry")
     .optional()
     .isISO8601()
@@ -40,12 +63,11 @@ export const registerDriverValidation = [
   body("serviceArea").optional().trim(),
   body("email").optional().trim().isEmail().normalizeEmail(),
   body("gender").optional().isIn(["male", "female", "other"]),
-  body("nidNumber").optional().trim(),
-  body("nidDocument")
+  body("aadhaarDocument")
     .optional()
     .trim()
     .isURL()
-    .withMessage("nidDocument must be a valid URL"),
+    .withMessage("aadhaarDocument must be a valid URL"),
   body("licenseDocument")
     .optional()
     .trim()
@@ -81,6 +103,7 @@ export const rechargeWalletValidation = [
 /**
  * POST /api/driver/register
  * Complete driver registration (multi-step form submission).
+ * Performs duplicate Aadhaar / Driving Licence checks before saving.
  */
 export async function registerDriver(
   req: Request,
@@ -105,12 +128,13 @@ export async function registerDriver(
     vehicleColor,
     vehicleYear,
     licenseNumber,
+    aadhaarNumber,
+    selfieDocument,
     serviceArea,
     email,
     gender,
     dob,
-    nidNumber,
-    nidDocument,
+    aadhaarDocument,
     licenseDocument,
     vehicleDocument,
     licenseExpiry,
@@ -122,32 +146,69 @@ export async function registerDriver(
     vehicleNumber: string;
     vehicleColor?: string;
     vehicleYear?: string;
-    licenseNumber?: string;
+    licenseNumber: string;
+    aadhaarNumber: string;
+    selfieDocument: string;
     serviceArea?: string;
     email?: string;
     gender?: string;
     dob?: Date;
-    nidNumber?: string;
-    nidDocument?: string;
+    aadhaarDocument?: string;
     licenseDocument?: string;
     vehicleDocument?: string;
     licenseExpiry?: string;
     avatar?: string;
   };
 
+  // ── KYC Duplicate Check ─────────────────────────────────────────────────────
+  // Check if Aadhaar or Driving Licence is already registered to another driver.
+  const normalizedAadhaar = normalizeAadhaarNumber(aadhaarNumber);
+  const normalizedLicense = normalizeLicenseNumber(licenseNumber);
+
+  const [existingAadhaar, existingLicense] = await Promise.all([
+    Driver.findOne({
+      aadhaarNumber: normalizedAadhaar,
+      _id: { $ne: driver._id },
+    }).lean(),
+    Driver.findOne({
+      licenseNumber: normalizedLicense,
+      _id: { $ne: driver._id },
+    }).lean(),
+  ]);
+
+  if (existingAadhaar) {
+    sendError(
+      res,
+      "আপনার এই পরিচয়পত্রটি (আধার কার্ড) ইতিমধ্যে নিবন্ধিত। পুরনো অ্যাকাউন্টে লগইন করুন।",
+      409,
+    );
+    return;
+  }
+
+  if (existingLicense) {
+    sendError(
+      res,
+      "আপনার এই পরিচয়পত্রটি (ড্রাইভিং লাইসেন্স) ইতিমধ্যে নিবন্ধিত। পুরনো অ্যাকাউন্টে লগইন করুন।",
+      409,
+    );
+    return;
+  }
+  // ────────────────────────────────────────────────────────────────────────────
+
   driver.name = name;
   driver.vehicleType = vehicleType;
   driver.vehicleModel = vehicleModel;
   driver.vehicleNumber = vehicleNumber.toUpperCase();
+  driver.licenseNumber = normalizedLicense;
+  driver.aadhaarNumber = normalizedAadhaar;
+  driver.selfieDocument = selfieDocument;
   if (vehicleColor) driver.vehicleColor = vehicleColor;
   if (vehicleYear) driver.vehicleYear = vehicleYear;
-  if (licenseNumber) driver.licenseNumber = licenseNumber;
   if (serviceArea) driver.serviceArea = serviceArea;
   if (email) driver.email = email;
   if (gender) driver.gender = gender as "male" | "female" | "other";
   if (dob) driver.dob = new Date(dob);
-  if (nidNumber) driver.nidNumber = nidNumber;
-  if (nidDocument) driver.nidDocument = nidDocument;
+  if (aadhaarDocument) driver.aadhaarDocument = aadhaarDocument;
   if (licenseDocument) driver.licenseDocument = licenseDocument;
   if (vehicleDocument) driver.vehicleDocument = vehicleDocument;
   if (licenseExpiry) driver.licenseExpiry = new Date(licenseExpiry);
@@ -190,7 +251,7 @@ export async function registerDriver(
 
   sendSuccess(
     res,
-    "Registration submitted. Your account is pending verification.",
+    "KYC submitted successfully. Your application is pending admin review.",
     {
       accountStatus: driver.accountStatus,
       id: driver._id,

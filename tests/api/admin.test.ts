@@ -145,6 +145,11 @@ describe("Admin driver approvals and wallet control", () => {
     expect(verifyRes.body.success).toBe(true);
     expect(verifyRes.body.data.accountStatus).toBe("verified");
     expect(verifyRes.body.data.walletBalance).toBe(3000);
+
+    // Verify the driver is also set to active
+    const updatedDriver = await Driver.findById(pendingDriver._id);
+    expect(updatedDriver?.isVerified).toBe(true);
+    expect(updatedDriver?.isActive).toBe(true);
   });
 
   it("should adjust a driver's wallet using admin wallet control", async () => {

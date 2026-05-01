@@ -1,9 +1,11 @@
 import { Request, Response } from "express";
 import { body } from "express-validator";
+import crypto from "crypto";
 import { User } from "../models/User";
 import { Driver } from "../models/Driver";
 import { Transaction } from "../models/Transaction";
 import { sendOTP, verifyOTP } from "../services/otp.service";
+import { verifyToken } from "../services/google-auth.service";
 import {
   signAccessToken,
   signRefreshToken,
@@ -85,6 +87,20 @@ export const adminPasswordLoginValidation = [
     .matches(/^\+\d{1,4}$/)
     .withMessage("Invalid country code"),
   body("password").notEmpty().withMessage("Password is required"),
+];
+
+// Social login validation
+export const socialLoginValidation = [
+  body("idToken").notEmpty().withMessage("ID token is required"),
+  body("provider")
+    .isIn(["google", "facebook"])
+    .withMessage("Provider must be google or facebook"),
+  body("deviceId").optional().trim(),
+];
+
+export const driverGoogleLoginValidation = [
+  body("idToken").notEmpty().withMessage("Google ID token is required"),
+  body("deviceId").optional().trim(),
 ];
 
 // ─── Controllers ──────────────────────────────────────────────────────────────
@@ -330,12 +346,13 @@ export async function verifyOTPHandler(
     } else {
       let driver = await Driver.findByPhone(phone, countryCode);
       if (!driver) {
-        // Driver stub — full registration happens in /api/driver/register
+        // Driver stub — full registration (KYC) happens in /api/driver/register
+        // Wallet starts at 0; the 3000 sign-up bonus is credited by admin on approval.
         driver = new Driver({
           phone,
           countryCode,
           accountStatus: "incomplete",
-          walletBalance: env.DRIVER_VERIFICATION_BONUS,
+          walletBalance: 0,
         });
         try {
           await driver.save({ validateBeforeSave: false });
@@ -349,7 +366,7 @@ export async function verifyOTPHandler(
               isActive: true,
               isOnline: false,
               isAvailable: false,
-              walletBalance: env.DRIVER_VERIFICATION_BONUS,
+              walletBalance: 0,
               totalEarnings: 0,
               rating: 5.0,
               totalRatings: 0,
@@ -363,16 +380,6 @@ export async function verifyOTPHandler(
             throw saveError;
           }
         }
-        await Transaction.create({
-          userId: driver._id,
-          userModel: "Driver",
-          type: "wallet_recharge",
-          amount: env.DRIVER_VERIFICATION_BONUS,
-          balanceBefore: 0,
-          balanceAfter: env.DRIVER_VERIFICATION_BONUS,
-          description: "Driver signup wallet credit",
-          status: "completed",
-        });
         isNewUser = true;
       } else if (!driver.isVerified) {
         driver.accountStatus = "pending";
@@ -473,4 +480,299 @@ export async function logoutHandler(
   // Stateless JWT — client discards tokens.
   // TODO: Add token to Redis blocklist for true server-side invalidation.
   sendSuccess(res, "Logged out successfully");
+}
+
+/**
+ * Sanitize a device ID supplied by the client.
+ * Ensures the value is a plain string to prevent NoSQL injection in MongoDB queries.
+ * Returns undefined if the input is falsy or empty after sanitization.
+ */
+function sanitizeDeviceId(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  const sanitized = String(raw)
+    .replace(/[^\w.\-]/g, "")
+    .slice(0, 200);
+  return sanitized || undefined;
+}
+
+/** Phone placeholder prefix for social (rider) accounts. */
+const SOCIAL_PHONE_PREFIX = "s";
+
+/** Phone placeholder prefix for Google-authenticated driver stubs. */
+const DRIVER_PHONE_PREFIX = "d";
+
+/**
+ * POST /api/auth/social-login
+ * Rider social sign-in via Google or Facebook.
+ * The mobile client authenticates with the provider and sends the ID token here.
+ * Supported providers: "google", "facebook"
+ */
+export async function socialLoginHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const {
+    idToken,
+    provider,
+    deviceId,
+  } = req.body as {
+    idToken: string;
+    provider: "google" | "facebook";
+    deviceId?: string;
+  };
+
+  try {
+    const identity = await verifyToken(provider, idToken);
+
+    const safeDeviceId = sanitizeDeviceId(deviceId);
+
+    // Prevent device-level fraud: same device → existing account
+    if (safeDeviceId) {
+      const existingByDevice = await User.findOne({
+        deviceId: safeDeviceId,
+        role: "rider",
+      });
+      if (existingByDevice) {
+        const tokenPayload = {
+          id: existingByDevice._id.toString(),
+          phone: existingByDevice.phone,
+          role: "rider" as const,
+        };
+        const accessToken = signAccessToken(tokenPayload);
+        const refreshToken = signRefreshToken(tokenPayload);
+        sendSuccess(res, "Login successful", {
+          accessToken,
+          refreshToken,
+          role: "rider",
+          isNewUser: false,
+          user: {
+            id: existingByDevice._id.toString(),
+            name: existingByDevice.name,
+            email: existingByDevice.email,
+            avatar: existingByDevice.avatar,
+            walletBalance: existingByDevice.walletBalance,
+          },
+        });
+        return;
+      }
+    }
+
+    // Find user by provider ID
+    const providerField = provider === "google" ? "googleId" : "facebookId";
+    let user = await User.findOne({ [providerField]: identity.providerId });
+
+    let isNewUser = false;
+
+    if (!user) {
+      // Try to find by email first to link accounts
+      if (identity.email) {
+        user = await User.findOne({ email: identity.email, role: "rider" });
+      }
+
+      if (user) {
+        // Link the social provider to the existing account
+        (user as any)[providerField] = identity.providerId;
+        if (!user.avatar && identity.picture) user.avatar = identity.picture;
+        if (safeDeviceId) user.deviceId = safeDeviceId;
+        await user.save();
+      } else {
+        // Create a new rider account.
+        // Phone is not available from social login — use a hash-based placeholder
+        // until the user links their real phone number.
+        const phonePlaceholder = `${SOCIAL_PHONE_PREFIX}${crypto
+          .createHash("sha256")
+          .update(identity.providerId)
+          .digest("hex")
+          .slice(0, 10)}`;
+        const newUser: Record<string, unknown> = {
+          phone: phonePlaceholder,
+          countryCode: "+91",
+          role: "rider",
+          isVerified: true,
+          isActive: true,
+          walletBalance: env.NEW_RIDER_WALLET_CREDIT,
+          [providerField]: identity.providerId,
+        };
+        if (identity.name) newUser.name = identity.name;
+        if (identity.email) newUser.email = identity.email;
+        if (identity.picture) newUser.avatar = identity.picture;
+        if (safeDeviceId) newUser.deviceId = safeDeviceId;
+
+        user = await User.create(newUser);
+        await Transaction.create({
+          userId: user._id,
+          userModel: "User",
+          type: "wallet_recharge",
+          amount: env.NEW_RIDER_WALLET_CREDIT,
+          balanceBefore: 0,
+          balanceAfter: env.NEW_RIDER_WALLET_CREDIT,
+          description: "Welcome bonus credit for new rider account",
+          status: "completed",
+        });
+        isNewUser = true;
+      }
+    } else {
+      // Update device ID if provided
+      if (safeDeviceId && user.deviceId !== safeDeviceId) {
+        user.deviceId = safeDeviceId;
+        await user.save();
+      }
+    }
+
+    if (!user.isActive) {
+      sendForbidden(res, "Account is inactive. Please contact support.");
+      return;
+    }
+
+    const tokenPayload = {
+      id: user._id.toString(),
+      phone: user.phone,
+      role: "rider" as const,
+    };
+    const accessToken = signAccessToken(tokenPayload);
+    const refreshToken = signRefreshToken(tokenPayload);
+
+    const statusCode = isNewUser ? 201 : 200;
+    res.status(statusCode).json({
+      success: true,
+      message: isNewUser ? "Account created successfully" : "Login successful",
+      data: {
+        accessToken,
+        refreshToken,
+        role: "rider",
+        isNewUser,
+        user: {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+          walletBalance: user.walletBalance,
+          profileStatus:
+            user.name && user.email ? "complete" : "partial",
+        },
+      },
+    });
+  } catch (error) {
+    logger.error("socialLogin error:", error);
+    sendUnauthorized(res, (error as Error).message);
+  }
+}
+
+/**
+ * POST /api/auth/driver/google-login
+ * Driver Google Sign-In (mandatory — replaces OTP for drivers).
+ * The mobile client authenticates with Google and sends the ID token.
+ * After this call the driver must submit KYC via POST /api/driver/register.
+ */
+export async function driverGoogleLoginHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { idToken, deviceId } = req.body as {
+    idToken: string;
+    deviceId?: string;
+  };
+
+  try {
+    const identity = await verifyToken("google", idToken);
+
+    const safeDeviceId = sanitizeDeviceId(deviceId);
+
+    // Device-level fraud check: block same device registering multiple accounts
+    if (safeDeviceId) {
+      const existingByDevice = await Driver.findOne({ deviceId: safeDeviceId });
+      if (
+        existingByDevice &&
+        existingByDevice.googleId !== identity.providerId
+      ) {
+        sendForbidden(
+          res,
+          "এই ডিভাইস থেকে ইতিমধ্যে একটি ড্রাইভার অ্যাকাউন্ট নিবন্ধিত আছে। দয়া করে পুরনো অ্যাকাউন্টে লগইন করুন।",
+        );
+        return;
+      }
+    }
+
+    let driver = await Driver.findOne({ googleId: identity.providerId });
+    let isNewDriver = false;
+
+    if (!driver) {
+      // Create a stub driver record; full registration happens via /api/driver/register.
+      // Phone is not available from Google Sign-In — use a hash-based placeholder
+      // until the driver links their real number during KYC.
+      const phonePlaceholder = `${DRIVER_PHONE_PREFIX}${crypto
+        .createHash("sha256")
+        .update(identity.providerId)
+        .digest("hex")
+        .slice(0, 10)}`;
+      driver = await Driver.create({
+        phone: phonePlaceholder,
+        countryCode: "+91",
+        googleId: identity.providerId,
+        accountStatus: "incomplete",
+        isVerified: false,
+        isActive: true,
+        isOnline: false,
+        isAvailable: false,
+        walletBalance: 0,
+        totalEarnings: 0,
+        rating: 5.0,
+        totalRatings: 0,
+        totalRides: 0,
+        ...(identity.name ? { name: identity.name } : {}),
+        ...(identity.email ? { email: identity.email } : {}),
+        ...(identity.picture ? { avatar: identity.picture } : {}),
+        ...(safeDeviceId ? { deviceId: safeDeviceId } : {}),
+      });
+      isNewDriver = true;
+    } else {
+      if (safeDeviceId && driver.deviceId !== safeDeviceId) {
+        driver.deviceId = safeDeviceId;
+        await driver.save();
+      }
+    }
+
+    if (!driver.isActive) {
+      sendForbidden(res, "Account is inactive. Please contact support.");
+      return;
+    }
+    if ((driver.accountStatus as string) === "suspended") {
+      sendForbidden(res, "Your account has been suspended. Contact support.");
+      return;
+    }
+
+    const tokenPayload = {
+      id: driver._id.toString(),
+      phone: driver.phone,
+      role: "driver" as const,
+    };
+    const accessToken = signAccessToken(tokenPayload);
+    const refreshToken = signRefreshToken(tokenPayload);
+
+    const statusCode = isNewDriver ? 201 : 200;
+    res.status(statusCode).json({
+      success: true,
+      message: isNewDriver
+        ? "Google login successful. Please complete your KYC to start driving."
+        : "Login successful",
+      data: {
+        accessToken,
+        refreshToken,
+        role: "driver",
+        isNewDriver,
+        driver: {
+          id: driver._id.toString(),
+          name: driver.name,
+          email: driver.email,
+          avatar: driver.avatar,
+          accountStatus: driver.accountStatus,
+          walletBalance: driver.walletBalance,
+          kycRequired: driver.accountStatus === "incomplete",
+        },
+      },
+    });
+  } catch (error) {
+    logger.error("driverGoogleLogin error:", error);
+    sendUnauthorized(res, (error as Error).message);
+  }
 }

@@ -6,11 +6,15 @@ import {
   logoutHandler,
   createAdminAccountHandler,
   adminPasswordLoginHandler,
+  socialLoginHandler,
+  driverGoogleLoginHandler,
   sendOTPValidation,
   verifyOTPValidation,
   refreshTokenValidation,
   createAdminValidation,
   adminPasswordLoginValidation,
+  socialLoginValidation,
+  driverGoogleLoginValidation,
 } from "../controllers/auth.controller";
 import { validateRequest } from "../middleware/validation.middleware";
 import { authenticate } from "../middleware/auth.middleware";
@@ -25,6 +29,19 @@ const otpLimiter = rateLimit({
   message: {
     success: false,
     message: "Too many OTP requests. Try again in 15 minutes.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === "test",
+});
+
+// Rate limit for social login endpoints
+const socialLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: {
+    success: false,
+    message: "Too many login attempts. Try again in 15 minutes.",
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -47,6 +64,24 @@ router.post(
   verifyOTPValidation,
   validateRequest,
   verifyOTPHandler,
+);
+
+// POST /api/auth/social-login  — Rider: Google / Facebook sign-in
+router.post(
+  "/social-login",
+  socialLoginLimiter,
+  socialLoginValidation,
+  validateRequest,
+  socialLoginHandler,
+);
+
+// POST /api/auth/driver/google-login  — Driver: Google sign-in (mandatory)
+router.post(
+  "/driver/google-login",
+  socialLoginLimiter,
+  driverGoogleLoginValidation,
+  validateRequest,
+  driverGoogleLoginHandler,
 );
 
 // POST /api/auth/admin/register
