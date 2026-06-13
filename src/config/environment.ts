@@ -22,10 +22,18 @@ export const env = {
   JWT_REFRESH_SECRET: required("JWT_REFRESH_SECRET"),
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || "30d",
 
-  // Twilio (OTP)
-  TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || "",
-  TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || "",
-  TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER || "",
+  // SMS provider (Message Central VerifyNow)
+  MESSAGE_CENTRAL_API_URL: process.env.MESSAGE_CENTRAL_API_URL || "",
+  MESSAGE_CENTRAL_API_KEY: process.env.MESSAGE_CENTRAL_API_KEY || "",
+  MESSAGE_CENTRAL_SENDER_ID: process.env.MESSAGE_CENTRAL_SENDER_ID || "",
+  MESSAGE_CENTRAL_API_KEY_HEADER_NAME:
+    process.env.MESSAGE_CENTRAL_API_KEY_HEADER_NAME || "Authorization",
+  MESSAGE_CENTRAL_API_KEY_PREFIX:
+    process.env.MESSAGE_CENTRAL_API_KEY_PREFIX || "Bearer ",
+  MESSAGE_CENTRAL_CUSTOMER_ID: process.env.MESSAGE_CENTRAL_CUSTOMER_ID || "",
+  MESSAGE_CENTRAL_KEY: process.env.MESSAGE_CENTRAL_KEY || "",
+  MESSAGE_CENTRAL_EMAIL: process.env.MESSAGE_CENTRAL_EMAIL || "",
+  MESSAGE_CENTRAL_COUNTRY: process.env.MESSAGE_CENTRAL_COUNTRY || "",
 
   // OTP
   OTP_EXPIRY_MINUTES: parseInt(process.env.OTP_EXPIRY_MINUTES || "10", 10),
@@ -54,7 +62,7 @@ export const env = {
     process.env.NEW_RIDER_WALLET_CREDIT || "3000",
   ),
 
-  // Demo mode (use mock OTP instead of Twilio)
+  // Demo mode (use mock OTP instead of SMS delivery)
   DEMO_MODE:
     process.env.DEMO_MODE === "true" || process.env.NODE_ENV === "development",
   DEMO_OTP: process.env.DEMO_OTP || "123456",
@@ -70,4 +78,6 @@ export const env = {
 
   // Google OAuth (used for social sign-in; required in production)
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
+  GOOGLE_OAUTH_REDIRECT_URI: process.env.GOOGLE_OAUTH_REDIRECT_URI || "",
 };

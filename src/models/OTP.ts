@@ -1,7 +1,7 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
-export type OTPPurpose = 'login' | 'register' | 'verification';
-export type OTPUserType = 'rider' | 'driver';
+export type OTPPurpose = "login" | "register" | "verification";
+export type OTPUserType = "rider" | "driver";
 
 export interface IOTP extends Document {
   _id: mongoose.Types.ObjectId;
@@ -10,6 +10,7 @@ export interface IOTP extends Document {
   code: string;
   purpose: OTPPurpose;
   userType: OTPUserType;
+  verificationId?: string;
   attempts: number;
   isUsed: boolean;
   expiresAt: Date;
@@ -22,18 +23,19 @@ const otpSchema = new Schema<IOTP>(
       type: String,
       required: true,
       trim: true,
-      match: [/^\d{10,15}$/, 'Invalid phone number'],
+      match: [/^\d{10,15}$/, "Invalid phone number"],
     },
-    countryCode: { type: String, default: '+91' },
+    countryCode: { type: String, default: "+91" },
     code: { type: String, required: true },
+    verificationId: { type: String, trim: true },
     purpose: {
       type: String,
-      enum: ['login', 'register', 'verification'],
-      default: 'login',
+      enum: ["login", "register", "verification"],
+      default: "login",
     },
     userType: {
       type: String,
-      enum: ['rider', 'driver'],
+      enum: ["rider", "driver"],
       required: true,
     },
     attempts: { type: Number, default: 0 },
@@ -43,11 +45,11 @@ const otpSchema = new Schema<IOTP>(
   {
     timestamps: true,
     versionKey: false,
-  }
+  },
 );
 
 // Auto-delete expired OTPs via TTL index
 otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 otpSchema.index({ phone: 1, countryCode: 1, userType: 1 });
 
-export const OTP = mongoose.model<IOTP>('OTP', otpSchema);
+export const OTP = mongoose.model<IOTP>("OTP", otpSchema);

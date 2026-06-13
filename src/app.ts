@@ -9,6 +9,7 @@ import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
 
 // Routes
 import authRoutes from "./routes/auth.routes";
+import googleOAuthRoutes from "./routes/google-oauth.routes";
 import riderRoutes from "./routes/rider.routes";
 import driverRoutes from "./routes/driver.routes";
 import rideRoutes from "./routes/ride.routes";
@@ -83,6 +84,7 @@ export function createApp(): Application {
   });
 
   // ── API Routes ────────────────────────────────────────────────────────────────
+  app.use("/auth", googleOAuthRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/rider", riderRoutes);
   app.use("/api/driver", driverRoutes);

@@ -165,7 +165,7 @@ export async function createAdminAccountHandler(
         sendUnauthorized(res, "Invalid admin creation secret");
         return;
       }
-    } else if (existingAdminCount > 3) {
+    } else if (existingAdminCount > 0) {
       sendForbidden(res, "Admin creation is restricted");
       return;
     }
@@ -496,10 +496,14 @@ function sanitizeDeviceId(raw?: string): string | undefined {
 }
 
 /** Phone placeholder prefix for social (rider) accounts. */
-const SOCIAL_PHONE_PREFIX = "s";
-
-/** Phone placeholder prefix for Google-authenticated driver stubs. */
-const DRIVER_PHONE_PREFIX = "d";
+function createPhonePlaceholder(providerId: string): string {
+  const hash = crypto.createHash("sha256").update(providerId).digest("hex");
+  const numeric = hash
+    .split("")
+    .map((char) => (parseInt(char, 16) % 10).toString())
+    .join("");
+  return numeric.slice(0, 10).padStart(10, "0");
+}
 
 /**
  * POST /api/auth/social-login
@@ -511,11 +515,7 @@ export async function socialLoginHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const {
-    idToken,
-    provider,
-    deviceId,
-  } = req.body as {
+  const { idToken, provider, deviceId } = req.body as {
     idToken: string;
     provider: "google" | "facebook";
     deviceId?: string;
@@ -579,11 +579,7 @@ export async function socialLoginHandler(
         // Create a new rider account.
         // Phone is not available from social login — use a hash-based placeholder
         // until the user links their real phone number.
-        const phonePlaceholder = `${SOCIAL_PHONE_PREFIX}${crypto
-          .createHash("sha256")
-          .update(identity.providerId)
-          .digest("hex")
-          .slice(0, 10)}`;
+        const phonePlaceholder = createPhonePlaceholder(identity.providerId);
         const newUser: Record<string, unknown> = {
           phone: phonePlaceholder,
           countryCode: "+91",
@@ -647,8 +643,7 @@ export async function socialLoginHandler(
           email: user.email,
           avatar: user.avatar,
           walletBalance: user.walletBalance,
-          profileStatus:
-            user.name && user.email ? "complete" : "partial",
+          profileStatus: user.name && user.email ? "complete" : "partial",
         },
       },
     });
@@ -700,11 +695,7 @@ export async function driverGoogleLoginHandler(
       // Create a stub driver record; full registration happens via /api/driver/register.
       // Phone is not available from Google Sign-In — use a hash-based placeholder
       // until the driver links their real number during KYC.
-      const phonePlaceholder = `${DRIVER_PHONE_PREFIX}${crypto
-        .createHash("sha256")
-        .update(identity.providerId)
-        .digest("hex")
-        .slice(0, 10)}`;
+      const phonePlaceholder = createPhonePlaceholder(identity.providerId);
       driver = await Driver.create({
         phone: phonePlaceholder,
         countryCode: "+91",

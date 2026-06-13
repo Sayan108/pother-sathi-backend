@@ -71,6 +71,14 @@ class GoogleIdentityProvider implements IdentityProvider {
         throw new Error("Invalid Google token: missing subject claim");
       }
 
+      const validIssuers = [
+        "accounts.google.com",
+        "https://accounts.google.com",
+      ];
+      if (!payload.iss || !validIssuers.includes(payload.iss as string)) {
+        throw new Error("Invalid Google token issuer");
+      }
+
       return {
         providerId: payload.sub,
         email: payload.email,
@@ -79,7 +87,10 @@ class GoogleIdentityProvider implements IdentityProvider {
         emailVerified: payload.email_verified ?? false,
       };
     } catch (error) {
-      logger.warn("Google token verification failed:", (error as Error).message);
+      logger.warn(
+        "Google token verification failed:",
+        (error as Error).message,
+      );
       throw new Error("Invalid or expired Google token");
     }
   }

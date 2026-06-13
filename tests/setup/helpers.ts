@@ -1,9 +1,5 @@
 import mongoose from "mongoose";
 import http from "http";
-import { createApp } from "../../src/app";
-import { initSocketServer } from "../../src/config/socket";
-import { initSocketHandlers } from "../../src/sockets";
-import { signAccessToken, signRefreshToken } from "../../src/utils/jwt";
 
 export async function connectTestDB(): Promise<void> {
   const uri = process.env.MONGODB_URI!;
@@ -24,8 +20,11 @@ export async function clearCollections(): Promise<void> {
 
 export function createTestServer(): {
   httpServer: http.Server;
-  app: ReturnType<typeof createApp>;
+  app: import("express").Application;
 } {
+  const { createApp } = require("../../src/app");
+  const { initSocketServer } = require("../../src/config/socket");
+  const { initSocketHandlers } = require("../../src/sockets");
   const app = createApp();
   const httpServer = http.createServer(app);
   const io = initSocketServer(httpServer);
@@ -33,10 +32,15 @@ export function createTestServer(): {
   return { httpServer, app };
 }
 
+function jwtUtils() {
+  return require("../../src/utils/jwt");
+}
+
 export function generateRiderToken(
   userId: string = new mongoose.Types.ObjectId().toString(),
   phone: string = "9876543210",
 ): string {
+  const { signAccessToken } = jwtUtils();
   return signAccessToken({ id: userId, phone, role: "rider" });
 }
 
@@ -44,6 +48,7 @@ export function generateDriverToken(
   userId: string = new mongoose.Types.ObjectId().toString(),
   phone: string = "9876543211",
 ): string {
+  const { signAccessToken } = jwtUtils();
   return signAccessToken({ id: userId, phone, role: "driver" });
 }
 
@@ -51,6 +56,7 @@ export function generateAdminToken(
   userId: string = new mongoose.Types.ObjectId().toString(),
   phone: string = "9876543219",
 ): string {
+  const { signAccessToken } = jwtUtils();
   return signAccessToken({ id: userId, phone, role: "admin" });
 }
 
@@ -59,6 +65,7 @@ export function generateRefreshToken(
   phone: string,
   role: "rider" | "driver" | "admin",
 ): string {
+  const { signRefreshToken } = jwtUtils();
   return signRefreshToken({ id: userId, phone, role });
 }
 

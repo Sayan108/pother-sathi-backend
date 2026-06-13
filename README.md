@@ -4,17 +4,17 @@ Full-featured **Node.js + TypeScript** backend for the Pather Sathi ride-sharing
 
 ## Tech Stack
 
-| Layer     | Technology                       |
-| --------- | -------------------------------- |
-| Runtime   | Node.js 18+                      |
-| Framework | Express.js                       |
-| Language  | TypeScript                       |
-| Database  | MongoDB + Mongoose               |
-| Real-time | Socket.io                        |
-| Auth      | JWT (access + refresh tokens)    |
-| OTP       | Twilio SMS / Demo mode           |
-| Security  | Helmet, CORS, rate-limit, bcrypt |
-| Logging   | Winston                          |
+| Layer     | Technology                            |
+| --------- | ------------------------------------- |
+| Runtime   | Node.js 18+                           |
+| Framework | Express.js                            |
+| Language  | TypeScript                            |
+| Database  | MongoDB + Mongoose                    |
+| Real-time | Socket.io                             |
+| Auth      | JWT (access + refresh tokens)         |
+| OTP       | Message Central VerifyNow / Demo mode |
+| Security  | Helmet, CORS, rate-limit, bcrypt      |
+| Logging   | Winston                               |
 
 ---
 
@@ -77,6 +77,10 @@ npm install
 ```bash
 cp .env.example .env
 # Edit .env with your MongoDB URI and JWT secrets
+# Add Google OAuth values for /auth/google and /auth/google/callback
+# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_OAUTH_REDIRECT_URI
+# Add Message Central values for OTP delivery
+# MESSAGE_CENTRAL_API_URL, MESSAGE_CENTRAL_API_KEY, MESSAGE_CENTRAL_SENDER_ID
 ```
 
 ### 3. Start MongoDB
@@ -101,12 +105,14 @@ The server starts on `http://localhost:5000`.
 
 ### Auth
 
-| Method | Endpoint               | Description             |
-| ------ | ---------------------- | ----------------------- |
-| POST   | `/api/auth/send-otp`   | Send OTP to phone       |
-| POST   | `/api/auth/verify-otp` | Verify OTP → JWT tokens |
-| POST   | `/api/auth/refresh`    | Refresh access token    |
-| POST   | `/api/auth/logout`     | Logout (client-side)    |
+| Method | Endpoint                | Description                                  |
+| ------ | ----------------------- | -------------------------------------------- |
+| POST   | `/api/auth/send-otp`    | Send OTP to phone                            |
+| POST   | `/api/auth/verify-otp`  | Verify OTP → JWT tokens                      |
+| POST   | `/api/auth/refresh`     | Refresh access token                         |
+| POST   | `/api/auth/logout`      | Logout (client-side)                         |
+| GET    | `/auth/google`          | Redirect to Google OAuth consent screen      |
+| GET    | `/auth/google/callback` | Google OAuth callback; issues app JWT tokens |
 
 ### Rider
 
