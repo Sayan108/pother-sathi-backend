@@ -45,7 +45,7 @@ export function registerRiderSocketHandlers(
       const { Driver } = require("../models/Driver");
       let availableDrivers = await Driver.find({
         vehicleType,
-        accountStatus: "verified",
+        $or: [{ accountStatus: "verified" }, { kycStatus: "approved" }],
         isActive: true,
         isOnline: true,
         isAvailable: true,
@@ -62,7 +62,7 @@ export function registerRiderSocketHandlers(
         availableDrivers = await Driver.find({
           phone: { $in: seedPhones },
           vehicleType,
-          accountStatus: "verified",
+          $or: [{ accountStatus: "verified" }, { kycStatus: "approved" }],
           isActive: true,
           isOnline: true,
           isAvailable: true,
@@ -143,7 +143,7 @@ export function registerRiderSocketHandlers(
       const fareBreakdown = calculateFare(distanceKm, vehicleType, couponCode);
       const driverFilter = {
         vehicleType,
-        accountStatus: "verified",
+        $or: [{ accountStatus: "verified" }, { kycStatus: "approved" }],
         isActive: true,
         isOnline: true,
         isAvailable: true,
@@ -187,7 +187,7 @@ export function registerRiderSocketHandlers(
         couponCode,
         paymentMethod,
         otp,
-        status: "searching",
+        status: "requested",
       });
 
       // Notify driver if online. Prefer the in-memory socket map, fallback to DB socketId.
@@ -195,7 +195,7 @@ export function registerRiderSocketHandlers(
       const driverSocketId =
         driverSocketMap.get(assignedDriverId) || assignedDriver.socketId;
       if (driverSocketId) {
-        io.to(driverSocketId).emit("ride:assigned", {
+        const rideRequestPayload = {
           rideId: ride._id,
           pickup,
           drop,
@@ -205,6 +205,19 @@ export function registerRiderSocketHandlers(
           driverEarning: ride.driverEarning,
           paymentMethod: ride.paymentMethod,
           riderId,
+          vehicleType: ride.vehicleType,
+        };
+        io.to(driverSocketId).emit("ride:request", rideRequestPayload);
+        io.to(driverSocketId).emit("ride:assigned", rideRequestPayload);
+        io.to(driverSocketId).emit("pickup:route", {
+          rideId: ride._id,
+          pickup,
+          driverLocation: assignedDriver.location?.coordinates,
+        });
+        io.to(driverSocketId).emit("destination:route", {
+          rideId: ride._id,
+          pickup,
+          drop,
         });
       }
       cb({
@@ -212,7 +225,7 @@ export function registerRiderSocketHandlers(
         rideId: ride._id,
         otp,
         fareBreakdown,
-        status: "searching",
+        status: "requested",
         driver: {
           _id: assignedDriver._id,
           name: assignedDriver.name,
@@ -241,7 +254,16 @@ export function registerRiderSocketHandlers(
       const ride = await Ride.findOne({
         _id: rideId,
         riderId,
-        status: { $in: ["searching", "driver_assigned", "driver_arrived"] },
+        status: {
+          $in: [
+            "requested",
+            "searching",
+            "accepted",
+            "driver_on_the_way",
+            "driver_assigned",
+            "driver_arrived",
+          ],
+        },
       });
       if (!ride) {
         cb({ success: false, error: "Cancellable ride not found" });

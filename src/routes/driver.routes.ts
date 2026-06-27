@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   registerDriver,
+  getKycStatus,
   getProfile,
   updateProfile,
   toggleOnlineStatus,
@@ -37,6 +38,11 @@ router.post(
   registerDriver,
 );
 
+router.post("/kyc", registerDriverValidation, validateRequest, registerDriver);
+router.put("/kyc", registerDriverValidation, validateRequest, registerDriver);
+router.patch("/kyc", registerDriverValidation, validateRequest, registerDriver);
+router.get("/kyc/status", getKycStatus);
+
 // GET  /api/driver/profile
 router.get("/profile", getProfile);
 
@@ -70,14 +76,15 @@ router.patch(
 );
 
 // GET  /api/driver/rides
-router.get("/rides", getRideHistory);
+router.get("/rides", requireVerifiedDriver, getRideHistory);
 
 // GET  /api/driver/wallet
-router.get("/wallet", getWallet);
+router.get("/wallet", requireVerifiedDriver, getWallet);
 
 // POST /api/driver/wallet/recharge
 router.post(
   "/wallet/recharge",
+  requireVerifiedDriver,
   rechargeWalletValidation,
   validateRequest,
   rechargeWallet,
@@ -86,6 +93,7 @@ router.post(
 // POST /api/driver/wallet/recharge-request
 router.post(
   "/wallet/recharge-request",
+  requireVerifiedDriver,
   rechargeWalletValidation,
   validateRequest,
   requestWalletRecharge,

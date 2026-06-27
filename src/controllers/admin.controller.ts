@@ -45,15 +45,15 @@ export async function getPendingDrivers(
   const skip = (page - 1) * limit;
 
   const [drivers, total] = await Promise.all([
-    Driver.find({ accountStatus: "pending" })
+    Driver.find({ $or: [{ accountStatus: "pending" }, { kycStatus: "pending" }] })
       .select(
-        "phone countryCode name vehicleType vehicleModel vehicleNumber accountStatus walletBalance aadhaarNumber licenseNumber aadhaarDocument licenseDocument selfieDocument vehicleDocument createdAt",
+        "phone countryCode name vehicleType vehicleModel vehicleNumber accountStatus kycStatus kycRejectionReason walletBalance aadhaarNumber licenseNumber aadhaarDocument licenseDocument selfieDocument vehicleDocument createdAt",
       )
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean(),
-    Driver.countDocuments({ accountStatus: "pending" }),
+    Driver.countDocuments({ $or: [{ accountStatus: "pending" }, { kycStatus: "pending" }] }),
   ]);
 
   sendSuccess(res, "Pending driver approvals fetched", { drivers }, 200, {
@@ -64,6 +64,22 @@ export async function getPendingDrivers(
   });
 }
 
+export async function getDriverKycDetails(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const driver = await Driver.findById(req.params.id)
+    .select(
+      "phone countryCode name email dob gender vehicleType vehicleModel vehicleNumber vehicleColor vehicleYear serviceArea accountStatus kycStatus kycRejectionReason walletBalance aadhaarNumber licenseNumber aadhaarDocument licenseDocument selfieDocument vehicleDocument licenseExpiry createdAt updatedAt",
+    )
+    .lean();
+  if (!driver) {
+    sendNotFound(res, "Driver not found");
+    return;
+  }
+  sendSuccess(res, "Driver KYC details fetched", { driver });
+}
+
 export async function verifyDriver(req: Request, res: Response): Promise<void> {
   const driverId = req.params.id;
   const driver = await Driver.findById(driverId);
@@ -71,13 +87,15 @@ export async function verifyDriver(req: Request, res: Response): Promise<void> {
     sendNotFound(res, "Driver not found");
     return;
   }
-  if (driver.accountStatus !== "pending") {
+  if (driver.accountStatus !== "pending" && driver.kycStatus !== "pending") {
     sendError(res, "Only pending drivers can be verified", 400);
     return;
   }
 
   const balanceBefore = driver.walletBalance;
   driver.accountStatus = "verified";
+  driver.kycStatus = "approved";
+  driver.kycRejectionReason = undefined;
   driver.isVerified = true;
   driver.isActive = true;
 
@@ -103,6 +121,7 @@ export async function verifyDriver(req: Request, res: Response): Promise<void> {
     driverId: driver._id,
     walletBalance: driver.walletBalance,
     accountStatus: driver.accountStatus,
+    kycStatus: driver.kycStatus,
   });
 }
 
@@ -113,18 +132,25 @@ export async function rejectDriver(req: Request, res: Response): Promise<void> {
     sendNotFound(res, "Driver not found");
     return;
   }
-  if (driver.accountStatus !== "pending") {
+  if (driver.accountStatus !== "pending" && driver.kycStatus !== "pending") {
     sendError(res, "Only pending drivers can be rejected", 400);
     return;
   }
 
   driver.accountStatus = "rejected";
+  driver.kycStatus = "rejected";
+  driver.kycRejectionReason =
+    (req.body?.reason as string) ||
+    (req.body?.rejectionReason as string) ||
+    "KYC rejected by admin";
   driver.isVerified = false;
   await driver.save();
 
   sendSuccess(res, "Driver verification rejected", {
     driverId: driver._id,
     accountStatus: driver.accountStatus,
+    kycStatus: driver.kycStatus,
+    rejectionReason: driver.kycRejectionReason,
   });
 }
 
@@ -190,14 +216,23 @@ export async function approveRechargeRequest(
   res: Response,
 ): Promise<void> {
   const requestId = req.params.id;
-  const rechargeRequest = await RechargeRequest.findById(requestId);
+  const rechargeRequest = await RechargeRequest.findOneAndUpdate(
+    { _id: requestId, status: "pending" },
+    {
+      $set: {
+        status: "approved",
+        reviewedBy: new mongoose.Types.ObjectId(req.user!.id),
+        approvedBy: new mongoose.Types.ObjectId(req.user!.id),
+        reviewedAt: new Date(),
+        approvedAt: new Date(),
+      },
+    },
+    { new: true },
+  );
   if (!rechargeRequest) {
-    sendNotFound(res, "Recharge request not found");
-    return;
-  }
-
-  if (rechargeRequest.status !== "pending") {
-    sendError(res, "Only pending requests can be approved", 400);
+    const existing = await RechargeRequest.findById(requestId).lean();
+    if (!existing) sendNotFound(res, "Recharge request not found");
+    else sendError(res, "Only pending requests can be approved", 400);
     return;
   }
 
@@ -210,11 +245,6 @@ export async function approveRechargeRequest(
   const balanceBefore = driver.walletBalance;
   driver.walletBalance += rechargeRequest.amount;
   await driver.save();
-
-  rechargeRequest.status = "approved";
-  rechargeRequest.reviewedBy = new mongoose.Types.ObjectId(req.user!.id);
-  rechargeRequest.reviewedAt = new Date();
-  await rechargeRequest.save();
 
   await Transaction.create({
     userId: driver._id,
@@ -252,11 +282,18 @@ export async function rejectRechargeRequest(
 
   rechargeRequest.status = "rejected";
   rechargeRequest.reviewedBy = new mongoose.Types.ObjectId(req.user!.id);
+  rechargeRequest.rejectedBy = new mongoose.Types.ObjectId(req.user!.id);
   rechargeRequest.reviewedAt = new Date();
+  rechargeRequest.rejectedAt = new Date();
+  rechargeRequest.rejectionReason =
+    (req.body?.reason as string) ||
+    (req.body?.rejectionReason as string) ||
+    "Recharge request rejected by admin";
   await rechargeRequest.save();
 
   sendSuccess(res, "Recharge request rejected", {
     requestId: rechargeRequest._id,
     status: rechargeRequest.status,
+    rejectionReason: rechargeRequest.rejectionReason,
   });
 }

@@ -182,6 +182,27 @@ describe("Socket Authentication", () => {
     console.log(`[Socket driver connect] latency=${latency}ms`);
   });
 
+  it("should reject connection with a valid token for a missing account", async () => {
+    const missingToken = generateRiderToken(new mongoose.Types.ObjectId().toString(), "9999999999");
+    const socket = Client(getServerAddress(), {
+      auth: { token: missingToken },
+      transports: ["websocket"],
+      forceNew: true,
+    });
+
+    await new Promise<void>((resolve) => {
+      socket.on("connect_error", (err) => {
+        expect(err.message).toContain("Account is inactive");
+        socket.disconnect();
+        resolve();
+      });
+      setTimeout(() => {
+        socket.disconnect();
+        resolve();
+      }, 3000);
+    });
+  });
+
   it("should reject connection without token", async () => {
     const socket = Client(getServerAddress(), {
       transports: ["websocket"],
@@ -284,6 +305,48 @@ describe("Rider Socket Events", () => {
     // Either succeeds with driver or says no drivers (depends on seed data vehicleType match)
     expect(response).toHaveProperty("success");
     console.log(`[ride:book] success=${response.success} latency=${latency}ms`);
+  });
+
+  it("should not send ride requests to unapproved drivers", async () => {
+    await Driver.deleteMany({});
+    const unapproved = await Driver.create({
+      phone: "9876543222",
+      countryCode: "+91",
+      name: "Unapproved Driver",
+      vehicleType: "auto",
+      vehicleModel: "Bajaj RE",
+      vehicleNumber: "WB01A2222",
+      accountStatus: "pending",
+      kycStatus: "pending",
+      isActive: true,
+      isOnline: true,
+      isAvailable: true,
+      walletBalance: 500,
+      location: { type: "Point", coordinates: [88.3639, 22.5726] },
+    });
+    const unapprovedSocket = await connectSocket(
+      generateDriverToken(unapproved._id.toString(), "9876543222"),
+    );
+    const received = jest.fn();
+    unapprovedSocket.on("ride:request", received);
+
+    const response = await promiseWithTimeout<any>((resolve) => {
+      riderSocket.emit(
+        "ride:book",
+        {
+          pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
+          drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
+          vehicleType: "auto",
+          paymentMethod: "cash",
+        },
+        resolve,
+      );
+    }, 3000);
+
+    await sleep(300);
+    expect(response.success).toBe(false);
+    expect(received).not.toHaveBeenCalled();
+    unapprovedSocket.disconnect();
   });
 
   it("should prevent booking if rider has active ride", async () => {
@@ -534,6 +597,46 @@ describe("Driver Socket Events", () => {
     expect(driver?.location?.coordinates?.[0]).toBe(88.3639);
   });
 
+  it("should not forward driver location to a rider who does not own the ride", async () => {
+    const otherRider = await User.create({
+      phone: "9876543229",
+      countryCode: "+91",
+      isVerified: true,
+      name: "Other Rider",
+    });
+    const otherSocket = await connectSocket(
+      generateRiderToken(otherRider._id.toString(), "9876543229"),
+    );
+    const received = jest.fn();
+    otherSocket.on("driver:location", received);
+
+    const ride = await Ride.create({
+      riderId: new mongoose.Types.ObjectId(riderId),
+      driverId: new mongoose.Types.ObjectId(driverId),
+      pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
+      drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
+      distance: 5,
+      duration: 15,
+      vehicleType: "auto",
+      fare: 100,
+      platformFee: 15,
+      driverEarning: 85,
+      discount: 0,
+      paymentMethod: "cash",
+      otp: "1234",
+      status: "driver_on_the_way",
+    });
+
+    driverSocket.emit("driver:location_update", {
+      lat: 22.5726,
+      lng: 88.3639,
+      rideId: ride._id.toString(),
+    });
+    await sleep(300);
+    expect(received).not.toHaveBeenCalled();
+    otherSocket.disconnect();
+  });
+
   it("should allow a driver to cancel an assigned ride and notify the rider", async () => {
     riderSocket = await connectSocket(riderToken);
     await sleep(100);
@@ -679,7 +782,13 @@ describe("Full Ride Lifecycle (Socket)", () => {
     expect(otpResult.success).toBe(true);
     console.log(`[ride:verify_otp] success=${otpResult.success}`);
 
-    // 4. Driver completes ride
+    // 4. Driver starts ride
+    const startResult = await promiseWithTimeout<any>((resolve) => {
+      driverSocket.emit("ride:start", { rideId }, resolve);
+    }, 3000);
+    expect(startResult.success).toBe(true);
+
+    // 5. Driver completes ride
     const completeResult = await promiseWithTimeout<any>((resolve) => {
       driverSocket.emit("ride:complete", { rideId }, resolve);
     }, 3000);
@@ -724,6 +833,11 @@ describe("Full Ride Lifecycle (Socket)", () => {
       driverSocket.emit("ride:verify_otp", { rideId, otp: "5678" }, resolve);
     }, 3000);
     expect(otpResult.success).toBe(true);
+
+    const startResult = await promiseWithTimeout<any>((resolve) => {
+      driverSocket.emit("ride:start", { rideId }, resolve);
+    }, 3000);
+    expect(startResult.success).toBe(true);
 
     const completeResult = await promiseWithTimeout<any>((resolve) => {
       driverSocket.emit("ride:complete", { rideId }, resolve);
@@ -773,6 +887,58 @@ describe("Full Ride Lifecycle (Socket)", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("Incorrect OTP");
     console.log(`[ride:verify_otp wrong otp] error="${result.error}"`);
+  });
+
+  it("should reject completion before ride is started", async () => {
+    const ride = await Ride.create({
+      riderId: new mongoose.Types.ObjectId(riderId),
+      driverId: new mongoose.Types.ObjectId(driverId),
+      pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
+      drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
+      distance: 5,
+      duration: 15,
+      vehicleType: "auto",
+      fare: 100,
+      platformFee: 15,
+      driverEarning: 85,
+      discount: 0,
+      paymentMethod: "cash",
+      otp: "5678",
+      status: "otp_verified",
+    });
+
+    const result = await promiseWithTimeout<any>((resolve) => {
+      driverSocket.emit("ride:complete", { rideId: ride._id.toString() }, resolve);
+    }, 3000);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("started");
+  });
+
+  it("should reject start before OTP verification", async () => {
+    const ride = await Ride.create({
+      riderId: new mongoose.Types.ObjectId(riderId),
+      driverId: new mongoose.Types.ObjectId(driverId),
+      pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
+      drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
+      distance: 5,
+      duration: 15,
+      vehicleType: "auto",
+      fare: 100,
+      platformFee: 15,
+      driverEarning: 85,
+      discount: 0,
+      paymentMethod: "cash",
+      otp: "5678",
+      status: "driver_arrived",
+    });
+
+    const result = await promiseWithTimeout<any>((resolve) => {
+      driverSocket.emit("ride:start", { rideId: ride._id.toString() }, resolve);
+    }, 3000);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("OTP verified");
   });
 });
 

@@ -4,9 +4,11 @@ export type VehicleType = "bike" | "auto" | "toto" | "car" | "delivery";
 export type DriverStatus =
   | "incomplete"
   | "pending"
+  | "approved"
   | "verified"
   | "rejected"
   | "suspended";
+export type KycStatus = "not_submitted" | "pending" | "rejected" | "approved";
 
 export interface IDriver extends Document {
   _id: mongoose.Types.ObjectId;
@@ -51,6 +53,8 @@ export interface IDriver extends Document {
 
   // Status
   accountStatus: DriverStatus;
+  kycStatus: KycStatus;
+  kycRejectionReason?: string;
   isOnline: boolean;
   isAvailable: boolean;
   currentRideId?: mongoose.Types.ObjectId;
@@ -152,9 +156,22 @@ const driverSchema = new Schema<IDriver>(
 
     accountStatus: {
       type: String,
-      enum: ["incomplete", "pending", "verified", "rejected", "suspended"],
+      enum: [
+        "incomplete",
+        "pending",
+        "approved",
+        "verified",
+        "rejected",
+        "suspended",
+      ],
       default: "incomplete",
     },
+    kycStatus: {
+      type: String,
+      enum: ["not_submitted", "pending", "rejected", "approved"],
+      default: "not_submitted",
+    },
+    kycRejectionReason: { type: String },
     isOnline: { type: Boolean, default: false },
     isAvailable: { type: Boolean, default: false },
     currentRideId: { type: Schema.Types.ObjectId, ref: "Ride" },
@@ -190,6 +207,18 @@ const driverSchema = new Schema<IDriver>(
 
 driverSchema.index({ location: "2dsphere" });
 driverSchema.index({ isOnline: 1, isAvailable: 1, accountStatus: 1 });
+driverSchema.index({ kycStatus: 1, createdAt: -1 });
+
+driverSchema.pre("validate", function (next) {
+  if (this.isModified("accountStatus") && !this.isModified("kycStatus")) {
+    if (this.accountStatus === "verified" || this.accountStatus === "approved")
+      this.kycStatus = "approved";
+    else if (this.accountStatus === "pending") this.kycStatus = "pending";
+    else if (this.accountStatus === "rejected") this.kycStatus = "rejected";
+    else if (this.accountStatus === "incomplete") this.kycStatus = "not_submitted";
+  }
+  next();
+});
 
 driverSchema.statics.findByPhone = function (
   phone: string,
@@ -213,7 +242,7 @@ driverSchema.statics.findNearby = function (
     },
     isOnline: true,
     isAvailable: true,
-    accountStatus: "verified",
+    accountStatus: { $in: ["verified", "approved"] },
   };
   if (vehicleType) query.vehicleType = vehicleType;
   return this.find(query).limit(10).exec();

@@ -2,10 +2,14 @@ import mongoose, { Document, Schema } from 'mongoose';
 import { VehicleType } from './Driver';
 
 export type RideStatus =
+  | 'requested'
+  | 'accepted'
+  | 'driver_on_the_way'
   | 'searching'       // Rider booked, looking for driver
   | 'driver_assigned' // Driver accepted
   | 'driver_arrived'  // Driver at pickup
   | 'otp_verified'    // OTP verified, ride started
+  | 'started'
   | 'in_progress'     // Rider in vehicle
   | 'completed'       // Ride done
   | 'cancelled'       // Cancelled by rider/driver
@@ -93,10 +97,14 @@ const rideSchema = new Schema<IRide>(
     status: {
       type: String,
       enum: [
+        'requested',
+        'accepted',
+        'driver_on_the_way',
         'searching',
         'driver_assigned',
         'driver_arrived',
         'otp_verified',
+        'started',
         'in_progress',
         'completed',
         'cancelled',

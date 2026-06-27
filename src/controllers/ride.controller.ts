@@ -157,7 +157,13 @@ export async function acceptRide(req: Request, res: Response): Promise<void> {
     return;
   }
   if (ride.status !== "searching") {
+    if (ride.status !== ("requested" as RideStatus)) {
     sendConflict(res, "Ride is no longer available");
+    return;
+    }
+  }
+  if (driver.accountStatus !== "verified" && driver.kycStatus !== "approved") {
+    sendForbidden(res, "Driver KYC approval required");
     return;
   }
   if (!driver.isOnline || !driver.isAvailable) {
@@ -167,7 +173,7 @@ export async function acceptRide(req: Request, res: Response): Promise<void> {
 
   // Assign driver to ride
   ride.driverId = new mongoose.Types.ObjectId(driverId);
-  ride.status = "driver_assigned";
+  ride.status = "driver_on_the_way" as RideStatus;
   ride.driverAssignedAt = new Date();
   await ride.save();
 
@@ -216,7 +222,7 @@ export async function driverArrived(
   const ride = await Ride.findOne({
     _id: req.params.rideId,
     driverId: req.user!.id,
-    status: "driver_assigned",
+    status: { $in: ["driver_assigned", "driver_on_the_way"] },
   });
 
   if (!ride) {
@@ -262,9 +268,8 @@ export async function verifyRideOTP(
     return;
   }
 
-  ride.status = "in_progress";
+  ride.status = "otp_verified";
   ride.otpVerifiedAt = new Date();
-  ride.startedAt = new Date();
   await ride.save();
 
   const io = getIO();
@@ -289,7 +294,7 @@ export async function completeRide(req: Request, res: Response): Promise<void> {
   const ride = await Ride.findOne({
     _id: req.params.rideId,
     driverId,
-    status: "in_progress",
+    status: { $in: ["started", "in_progress"] },
   });
 
   if (!ride) {
@@ -363,7 +368,17 @@ export async function cancelRide(req: Request, res: Response): Promise<void> {
 
   const query: Record<string, unknown> = {
     _id: req.params.rideId,
-    status: { $in: ["searching", "driver_assigned", "driver_arrived"] },
+    status: {
+      $in: [
+        "requested",
+        "searching",
+        "accepted",
+        "driver_on_the_way",
+        "driver_assigned",
+        "driver_arrived",
+        "otp_verified",
+      ],
+    },
   };
 
   if (role === "rider") query.riderId = userId;
@@ -478,9 +493,13 @@ export async function getActiveRide(
     status: {
       $in: [
         "searching",
+        "requested",
+        "accepted",
+        "driver_on_the_way",
         "driver_assigned",
         "driver_arrived",
         "otp_verified",
+        "started",
         "in_progress",
       ],
     },

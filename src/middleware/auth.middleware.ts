@@ -85,6 +85,25 @@ export async function requireDriver(
   next();
 }
 
+export function isDriverKycApproved(driver: {
+  accountStatus?: string;
+  kycStatus?: string;
+}): boolean {
+  return (
+    driver.kycStatus === "approved" ||
+    driver.accountStatus === "verified" ||
+    driver.accountStatus === "approved"
+  );
+}
+
+export async function loadApprovedDriver(driverId: string) {
+  const driver = await Driver.findById(driverId);
+  if (!driver || !driver.isActive || driver.accountStatus === "suspended") {
+    return null;
+  }
+  return isDriverKycApproved(driver) ? driver : null;
+}
+
 /**
  * Restricts access to verified drivers only.
  */
@@ -104,12 +123,14 @@ export async function requireVerifiedDriver(
     sendForbidden(res, "Account is inactive or deleted");
     return;
   }
-  if (driver.accountStatus !== "verified") {
-    sendForbidden(res, "Account is pending verification");
+  if (!isDriverKycApproved(driver)) {
+    sendForbidden(res, "Driver KYC approval required");
     return;
   }
   next();
 }
+
+export const requireApprovedDriver = requireVerifiedDriver;
 
 /**
  * Allows both riders and drivers. Just validates the token.

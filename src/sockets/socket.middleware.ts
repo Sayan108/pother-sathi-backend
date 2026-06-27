@@ -31,6 +31,19 @@ export async function socketAuthMiddleware(
 
   try {
     const payload = verifyAccessToken(token);
+    if (payload.role === "driver") {
+      const driver = await Driver.findById(payload.id)
+        .select("isActive accountStatus")
+        .lean();
+      if (!driver?.isActive || driver.accountStatus === "suspended") {
+        return next(new Error("Account is inactive or deleted"));
+      }
+    } else {
+      const user = await User.findById(payload.id).select("isActive role").lean();
+      if (!user?.isActive || user.role !== payload.role) {
+        return next(new Error("Account is inactive or deleted"));
+      }
+    }
     const authSocket = socket as AuthenticatedSocket;
     authSocket.userId = payload.id;
     authSocket.role = payload.role;

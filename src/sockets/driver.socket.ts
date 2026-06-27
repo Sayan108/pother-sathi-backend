@@ -1,70 +1,107 @@
 import { Server as SocketServer } from "socket.io";
+import mongoose from "mongoose";
 import { Driver } from "../models/Driver";
 import { Ride } from "../models/Ride";
+import { Transaction } from "../models/Transaction";
+import { User } from "../models/User";
 import { AuthenticatedSocket } from "./socket.middleware";
 import { riderSocketMap } from "../controllers/ride.controller";
+import { isDriverKycApproved } from "../middleware/auth.middleware";
 import { logger } from "../utils/logger";
 
-// In-memory map: driverId → socketId
-// For production, use Redis
 export const driverSocketMap = new Map<string, string>();
+
+type Ack = (payload: Record<string, unknown>) => void;
+
+function fail(cb: Ack | undefined, error: string) {
+  cb?.({ success: false, error });
+}
+
+async function getApprovedDriver(driverId: string) {
+  const driver = await Driver.findById(driverId);
+  if (!driver?.isActive || !isDriverKycApproved(driver)) return null;
+  return driver;
+}
+
+function emitToRider(
+  io: SocketServer,
+  riderId: mongoose.Types.ObjectId,
+  event: string,
+  payload: Record<string, unknown>,
+) {
+  io.to(`rider:${riderId.toString()}`).emit(event, payload);
+  const riderSocketId = riderSocketMap.get(riderId.toString());
+  if (riderSocketId) io.to(riderSocketId).emit(event, payload);
+}
 
 export async function registerDriverSocketHandlers(
   io: SocketServer,
   socket: AuthenticatedSocket,
 ): Promise<void> {
   const driverId = socket.userId;
+  const connectedDriver = await Driver.findById(driverId).select(
+    "isActive accountStatus kycStatus",
+  );
 
-  // Join driver-specific room
+  if (!connectedDriver?.isActive) {
+    socket.disconnect(true);
+    return;
+  }
+
   socket.join(`driver:${driverId}`);
-
-  // Register socket ID in memory and persist it to the driver record.
   driverSocketMap.set(driverId, socket.id);
   await Driver.findByIdAndUpdate(driverId, { socketId: socket.id }).exec();
 
   logger.debug(`Driver ${driverId} connected [socket: ${socket.id}]`);
 
-  /**
-   * ride:accept
-   * Driver accepts a ride request.
-   * Payload: { rideId }
-   */
-  socket.on("ride:accept", async (data, cb) => {
+  const requireApproved = async (cb?: Ack) => {
+    const driver = await getApprovedDriver(driverId);
+    if (!driver) {
+      fail(cb, "Driver KYC approval required");
+      return null;
+    }
+    return driver;
+  };
+
+  socket.on("driver:join_available", async (_data, cb: Ack) => {
+    const driver = await requireApproved(cb);
+    if (!driver) return;
+    if (!driver.isOnline || !driver.isAvailable) {
+      fail(cb, "Driver must be online and available");
+      return;
+    }
+    socket.join("drivers:available");
+    cb?.({ success: true });
+  });
+
+  socket.on("ride:accept", async (data, cb: Ack) => {
     try {
-      const { rideId } = data;
+      const driver = await requireApproved(cb);
+      if (!driver) return;
+      const { rideId } = data || {};
       const ride = await Ride.findOne({
         _id: rideId,
-        status: "searching",
+        status: { $in: ["requested", "searching"] },
       });
       if (!ride) {
-        cb({ success: false, error: "Ride is no longer available" });
+        fail(cb, "Ride is no longer available");
         return;
       }
-      if (ride.driverId && ride.driverId.toString() !== driverId) {
-        cb({ success: false, error: "Ride is not assigned to you" });
+      if (!driver.isOnline || !driver.isAvailable) {
+        fail(cb, "You must be online and available to accept rides");
         return;
       }
-      // Mark driver as unavailable
-      const { Driver } = require("../models/Driver");
-      const driver = await Driver.findById(driverId);
-      if (!driver?.isOnline || !driver?.isAvailable) {
-        cb({
-          success: false,
-          error: "You must be online and available to accept rides",
-        });
-        return;
-      }
-      ride.driverId =
-        ride.driverId || new (require("mongoose").Types.ObjectId)(driverId);
-      ride.status = "driver_assigned";
+
+      ride.driverId = new mongoose.Types.ObjectId(driverId);
+      ride.status = "driver_on_the_way" as any;
       ride.driverAssignedAt = new Date();
       await ride.save();
+
       driver.isAvailable = false;
       driver.currentRideId = ride._id;
       await driver.save();
-      // Notify rider
-      const riderRoom = `rider:${ride.riderId.toString()}`;
-      io.to(riderRoom).emit("ride:driver_assigned", {
+
+      const payload = {
         rideId: ride._id,
         driver: {
           id: driver._id,
@@ -75,11 +112,14 @@ export async function registerDriverSocketHandlers(
           vehicleNumber: driver.vehicleNumber,
           vehicleColor: driver.vehicleColor,
           rating: driver.rating,
-          location: driver.location.coordinates,
+          location: driver.location?.coordinates,
         },
         estimatedArrival: "5 mins",
-      });
-      cb({
+      };
+      emitToRider(io, ride.riderId, "driver:assigned", payload);
+      emitToRider(io, ride.riderId, "ride:driver_assigned", payload);
+
+      cb?.({
         success: true,
         rideId: ride._id,
         pickup: ride.pickup,
@@ -90,124 +130,117 @@ export async function registerDriverSocketHandlers(
       });
     } catch (err) {
       logger.error("ride:accept error:", err);
-      cb({ success: false, error: "Unable to accept ride" });
+      fail(cb, "Unable to accept ride");
     }
   });
 
-  /**
-   * ride:arrived
-   * Driver marks arrival at pickup.
-   * Payload: { rideId }
-   */
-  socket.on("ride:arrived", async (data, cb) => {
+  const arrivedHandler = async (data: any, cb: Ack) => {
     try {
-      const { rideId } = data;
+      const driver = await requireApproved(cb);
+      if (!driver) return;
       const ride = await Ride.findOne({
-        _id: rideId,
+        _id: data?.rideId,
         driverId,
-        status: "driver_assigned",
+        status: { $in: ["accepted", "driver_on_the_way", "driver_assigned"] },
       });
       if (!ride) {
-        cb({ success: false, error: "Active ride not found" });
+        fail(cb, "Active ride not found");
         return;
       }
       ride.status = "driver_arrived";
       ride.driverArrivedAt = new Date();
       await ride.save();
-      const { riderSocketMap } = require("../controllers/ride.controller");
-      const riderSocketId = riderSocketMap.get(ride.riderId.toString());
-      if (riderSocketId) {
-        io.to(riderSocketId).emit("ride:driver_arrived", { rideId: ride._id });
-      }
-      cb({ success: true });
+      emitToRider(io, ride.riderId, "driver:arrived", { rideId: ride._id });
+      emitToRider(io, ride.riderId, "ride:driver_arrived", { rideId: ride._id });
+      cb?.({ success: true });
     } catch (err) {
       logger.error("ride:arrived error:", err);
-      cb({ success: false, error: "Unable to mark arrival" });
+      fail(cb, "Unable to mark arrival");
     }
-  });
+  };
+  socket.on("driver:arrived_pickup", arrivedHandler);
+  socket.on("ride:arrived", arrivedHandler);
 
-  /**
-   * ride:verify_otp
-   * Driver verifies rider's OTP to start the ride.
-   * Payload: { rideId, otp }
-   */
-  socket.on("ride:verify_otp", async (data, cb) => {
+  const otpHandler = async (data: any, cb: Ack) => {
     try {
-      const { rideId, otp } = data;
+      const driver = await requireApproved(cb);
+      if (!driver) return;
       const ride = await Ride.findOne({
-        _id: rideId,
+        _id: data?.rideId,
         driverId,
         status: "driver_arrived",
       });
       if (!ride) {
-        cb({ success: false, error: "Ride not found or not in correct state" });
+        fail(cb, "Ride not found or not in correct state");
         return;
       }
-      if (ride.otp !== otp) {
-        cb({
-          success: false,
-          error: "Incorrect OTP. Please verify with the rider.",
-        });
+      if (ride.otp !== data?.otp) {
+        fail(cb, "Incorrect OTP. Please verify with the rider.");
         return;
       }
-      ride.status = "in_progress";
+      ride.status = "otp_verified";
       ride.otpVerifiedAt = new Date();
+      await ride.save();
+      cb?.({ success: true, rideId: ride._id, status: ride.status });
+    } catch (err) {
+      logger.error("ride:otp_verify error:", err);
+      fail(cb, "Unable to verify OTP");
+    }
+  };
+  socket.on("ride:otp_verify", otpHandler);
+  socket.on("ride:verify_otp", otpHandler);
+
+  socket.on("ride:start", async (data, cb: Ack) => {
+    try {
+      const driver = await requireApproved(cb);
+      if (!driver) return;
+      const ride = await Ride.findOne({
+        _id: data?.rideId,
+        driverId,
+        status: "otp_verified",
+      });
+      if (!ride) {
+        fail(cb, "Ride must be OTP verified before start");
+        return;
+      }
+      ride.status = "started" as any;
       ride.startedAt = new Date();
       await ride.save();
-      const { riderSocketMap } = require("../controllers/ride.controller");
-      const riderSocketId = riderSocketMap.get(ride.riderId.toString());
-      if (riderSocketId) {
-        io.to(riderSocketId).emit("ride:started", { rideId: ride._id });
-      }
-      cb({ success: true, rideId: ride._id });
+      emitToRider(io, ride.riderId, "ride:started", { rideId: ride._id });
+      cb?.({ success: true, rideId: ride._id, status: ride.status });
     } catch (err) {
-      logger.error("ride:verify_otp error:", err);
-      cb({ success: false, error: "Unable to verify OTP" });
+      logger.error("ride:start error:", err);
+      fail(cb, "Unable to start ride");
     }
   });
 
-  /**
-   * ride:complete
-   * Driver completes the ride, triggers money credit.
-   * Payload: { rideId }
-   */
-  socket.on("ride:complete", async (data, cb) => {
+  socket.on("ride:complete", async (data, cb: Ack) => {
     try {
-      const { rideId } = data;
+      const driver = await requireApproved(cb);
+      if (!driver) return;
       const ride = await Ride.findOne({
-        _id: rideId,
+        _id: data?.rideId,
         driverId,
-        status: "in_progress",
+        status: { $in: ["started", "in_progress"] },
       });
       if (!ride) {
-        cb({ success: false, error: "Active ride not found" });
+        fail(cb, "Ride must be started before completion");
         return;
       }
 
-      const { Driver } = require("../models/Driver");
-      const { Transaction } = require("../models/Transaction");
-      let rider: any;
-
       if (ride.paymentMethod === "wallet") {
-        const { User } = require("../models/User");
-        rider = await User.findById(ride.riderId);
+        const rider = await User.findById(ride.riderId);
         if (!rider) {
-          cb({ success: false, error: "Rider account not found" });
+          fail(cb, "Rider account not found");
           return;
         }
-
         if (rider.walletBalance < ride.fare) {
-          cb({
-            success: false,
-            error: "Insufficient rider wallet balance to complete the ride",
-          });
+          fail(cb, "Insufficient rider wallet balance to complete the ride");
           return;
         }
-
         const balanceBefore = rider.walletBalance;
         rider.walletBalance -= ride.fare;
         await rider.save();
-
         await Transaction.create({
           userId: rider._id,
           userModel: "User",
@@ -219,7 +252,6 @@ export async function registerDriverSocketHandlers(
           description: `Ride payment for ${ride.pickup.address || "pickup"} to ${ride.drop.address || "drop"}`,
           status: "completed",
         });
-
         ride.isPaid = true;
       } else {
         ride.isPaid = ride.paymentMethod === "cash";
@@ -229,173 +261,157 @@ export async function registerDriverSocketHandlers(
       ride.completedAt = new Date();
       await ride.save();
 
-      const driver = await Driver.findById(driverId);
-      if (driver) {
-        const balanceBefore = driver.walletBalance;
-        driver.walletBalance = Math.max(
-          0,
-          driver.walletBalance - ride.platformFee,
-        );
-        driver.totalEarnings += ride.driverEarning;
-        driver.totalRides += 1;
-        driver.isAvailable = true;
-        driver.currentRideId = undefined;
-        await driver.save();
-        await Transaction.create({
-          userId: driver._id,
-          userModel: "Driver",
-          type: "platform_fee",
-          amount: -ride.platformFee,
-          balanceBefore,
-          balanceAfter: driver.walletBalance,
-          rideId: ride._id,
-          description: `Platform fee deduction for ride ${ride._id}`,
-          status: "completed",
-        });
-      }
+      const balanceBefore = driver.walletBalance;
+      driver.walletBalance = Math.max(0, driver.walletBalance - ride.platformFee);
+      driver.totalEarnings += ride.driverEarning;
+      driver.totalRides += 1;
+      driver.isAvailable = true;
+      driver.currentRideId = undefined;
+      await driver.save();
+      await Transaction.create({
+        userId: driver._id,
+        userModel: "Driver",
+        type: "platform_fee",
+        amount: -ride.platformFee,
+        balanceBefore,
+        balanceAfter: driver.walletBalance,
+        rideId: ride._id,
+        description: `Platform fee deduction for ride ${ride._id}`,
+        status: "completed",
+      });
 
-      // Update rider's total rides
-      const { User } = require("../models/User");
       await User.findByIdAndUpdate(ride.riderId, { $inc: { totalRides: 1 } });
-
-      // Notify rider
-      const { riderSocketMap } = require("../controllers/ride.controller");
-      const riderSocketId = riderSocketMap.get(ride.riderId.toString());
-      if (riderSocketId) {
-        io.to(riderSocketId).emit("ride:completed", {
-          rideId: ride._id,
-          fare: ride.fare,
-          paymentMethod: ride.paymentMethod,
-        });
-      }
-
-      cb({
+      emitToRider(io, ride.riderId, "ride:completed", {
+        rideId: ride._id,
+        fare: ride.fare,
+        paymentMethod: ride.paymentMethod,
+      });
+      cb?.({
         success: true,
         rideId: ride._id,
         earning: ride.driverEarning,
         platformFee: ride.platformFee,
-        walletBalance: driver?.walletBalance,
+        walletBalance: driver.walletBalance,
       });
     } catch (err) {
       logger.error("ride:complete error:", err);
-      cb({ success: false, error: "Unable to complete ride" });
+      fail(cb, "Unable to complete ride");
     }
   });
 
-  /**
-   * ride:cancel
-   * Driver cancels a ride (searching, assigned, arrived).
-   * Payload: { rideId, reason }
-   */
-  socket.on("ride:cancel", async (data, cb) => {
+  socket.on("ride:cancel", async (data, cb: Ack) => {
     try {
-      const { rideId, reason } = data;
+      const driver = await requireApproved(cb);
+      if (!driver) return;
       const ride = await Ride.findOne({
-        _id: rideId,
+        _id: data?.rideId,
         driverId,
-        status: { $in: ["searching", "driver_assigned", "driver_arrived"] },
+        status: {
+          $in: [
+            "requested",
+            "searching",
+            "accepted",
+            "driver_on_the_way",
+            "driver_assigned",
+            "driver_arrived",
+            "otp_verified",
+          ],
+        },
       });
       if (!ride) {
-        cb({ success: false, error: "Cancellable ride not found" });
+        fail(cb, "Cancellable ride not found");
         return;
       }
       ride.status = "cancelled";
       ride.cancelledBy = "driver";
-      ride.cancellationReason = reason;
+      ride.cancellationReason = data?.reason;
       ride.cancelledAt = new Date();
       await ride.save();
-      // Free up driver
-      const { Driver } = require("../models/Driver");
-      await Driver.findByIdAndUpdate(driverId, {
-        $set: { isAvailable: true, currentRideId: null },
+      driver.isAvailable = true;
+      driver.currentRideId = undefined;
+      await driver.save();
+      emitToRider(io, ride.riderId, "ride:cancelled", {
+        rideId: ride._id,
+        cancelledBy: "driver",
+        reason: data?.reason,
       });
-      // Notify rider
-      const { riderSocketMap } = require("../controllers/ride.controller");
-      const riderSocketId = riderSocketMap.get(ride.riderId.toString());
-      if (riderSocketId) {
-        io.to(riderSocketId).emit("ride:driver_cancelled", {
-          rideId: ride._id,
-          cancelledBy: "driver",
-          reason,
-        });
-      }
-      cb({ success: true });
+      emitToRider(io, ride.riderId, "ride:driver_cancelled", {
+        rideId: ride._id,
+        cancelledBy: "driver",
+        reason: data?.reason,
+      });
+      cb?.({ success: true });
     } catch (err) {
       logger.error("ride:cancel error:", err);
-      cb({ success: false, error: "Unable to cancel ride" });
+      fail(cb, "Unable to cancel ride");
     }
   });
 
-  // ...existing code...
+  const locationHandler = async (
+    data: { lat: number; lng: number; rideId?: string },
+    cb?: Ack,
+  ) => {
+    const driver = await requireApproved(cb);
+    if (!driver) return;
+    const { lat, lng, rideId } = data || {};
+    if (typeof lat !== "number" || typeof lng !== "number") return;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
 
-  /**
-   * driver:location_update
-   * Driver sends their GPS coordinates periodically.
-   * Payload: { lat: number; lng: number; rideId?: string }
-   */
-  socket.on(
-    "driver:location_update",
-    async (data: { lat: number; lng: number; rideId?: string }) => {
-      const { lat, lng, rideId } = data;
+    if (!rideId && (!driver.isOnline || !driver.isAvailable)) {
+      fail(cb, "Driver must be online and available to update availability location");
+      return;
+    }
 
-      // Validate coordinates
-      if (typeof lat !== "number" || typeof lng !== "number") return;
-      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
+    await Driver.findByIdAndUpdate(driverId, {
+      "location.coordinates": [lng, lat],
+    });
 
-      // Update DB location
-      await Driver.findByIdAndUpdate(driverId, {
-        "location.coordinates": [lng, lat],
-      });
+    if (rideId) {
+      const ride = await Ride.findOne({
+        _id: rideId,
+        driverId,
+        status: {
+          $in: [
+            "accepted",
+            "driver_on_the_way",
+            "driver_assigned",
+            "driver_arrived",
+            "otp_verified",
+            "started",
+            "in_progress",
+          ],
+        },
+      })
+        .select("riderId status")
+        .lean();
 
-      // If in active ride, forward location to rider
-      if (rideId) {
-        const ride = await Ride.findOne({
-          _id: rideId,
-          driverId,
-          status: { $in: ["driver_assigned", "driver_arrived", "in_progress"] },
-        })
-          .select("riderId")
-          .lean();
-
-        if (ride) {
-          const riderSocketId = riderSocketMap.get(ride.riderId.toString());
-          if (riderSocketId) {
-            io.to(riderSocketId).emit("driver:location", {
-              lat,
-              lng,
-              rideId,
-            });
-          }
-
-          // Record path point during in_progress
-          await Ride.findByIdAndUpdate(rideId, {
-            $push: {
-              driverPath: { lat, lng, timestamp: new Date() },
-            },
-          });
-        }
+      if (!ride) {
+        fail(cb, "Assigned ride not found");
+        return;
       }
-    },
-  );
+      emitToRider(io, ride.riderId as any, "driver:location", {
+        lat,
+        lng,
+        rideId,
+      });
+      if (["started", "in_progress"].includes(ride.status)) {
+        await Ride.findByIdAndUpdate(rideId, {
+          $push: { driverPath: { lat, lng, timestamp: new Date() } },
+        });
+      }
+    }
+    cb?.({ success: true });
+  };
+  socket.on("driver:location:update", locationHandler);
+  socket.on("driver:location_update", locationHandler);
 
-  /**
-   * driver:reject_ride
-   * Driver explicitly rejects a ride request.
-   * Payload: { rideId: string }
-   */
   socket.on("driver:reject_ride", (data: { rideId: string }) => {
     logger.debug(`Driver ${driverId} rejected ride ${data.rideId}`);
-    // No action needed on server unless tracking rejections
   });
 
-  /**
-   * Handle disconnection.
-   */
   socket.on("disconnect", async (reason) => {
     logger.debug(`Driver ${driverId} disconnected: ${reason}`);
     driverSocketMap.delete(driverId);
-
-    // Mark driver offline when disconnected
     await Driver.findByIdAndUpdate(driverId, {
       $set: { isOnline: false, isAvailable: false, socketId: null },
     });

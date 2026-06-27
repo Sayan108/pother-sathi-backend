@@ -93,9 +93,13 @@ export const locationUpdateValidation = [
 
 export const rechargeWalletValidation = [
   body("amount")
-    .isFloat({ min: 10, max: 10000 })
-    .withMessage("Amount must be between 10 and 10000"),
-  body("paymentReference").optional().trim(),
+    .isFloat({ min: 1, max: 10000 })
+    .withMessage("Amount must be between 1 and 10000"),
+  body("paymentReference")
+    .trim()
+    .notEmpty()
+    .withMessage("paymentReference is required"),
+  body("paymentScreenshotUrl").optional().trim().isURL(),
 ];
 
 // ─── Controllers ──────────────────────────────────────────────────────────────
@@ -214,6 +218,8 @@ export async function registerDriver(
   if (licenseExpiry) driver.licenseExpiry = new Date(licenseExpiry);
   if (avatar) driver.avatar = avatar;
   driver.accountStatus = "pending";
+  driver.kycStatus = "pending";
+  driver.kycRejectionReason = undefined;
 
   if (req.body.referralCode) {
     const referralCode = (req.body.referralCode as string).toUpperCase();
@@ -254,6 +260,7 @@ export async function registerDriver(
     "KYC submitted successfully. Your application is pending admin review.",
     {
       accountStatus: driver.accountStatus,
+      kycStatus: driver.kycStatus,
       id: driver._id,
       referredBy: driver.referredBy,
     },
@@ -362,14 +369,14 @@ export async function activateDriver(
     return;
   }
 
-  driver.accountStatus = "verified";
-  driver.isVerified = true;
-  await creditDriverVerificationBonus(driver);
+  driver.accountStatus = "pending";
+  driver.kycStatus = "pending";
+  driver.isVerified = false;
   await driver.save();
 
-  sendSuccess(res, "Driver account activated. You can now go online.", {
+  sendSuccess(res, "Driver KYC is pending admin approval.", {
     accountStatus: driver.accountStatus,
-    walletBalance: driver.walletBalance,
+    kycStatus: driver.kycStatus,
   });
 }
 
@@ -384,7 +391,34 @@ export async function getProfile(req: Request, res: Response): Promise<void> {
     sendNotFound(res, "Driver not found");
     return;
   }
-  sendSuccess(res, "Profile fetched", driver);
+  sendSuccess(res, "Profile fetched", {
+    ...driver,
+    kycStatus:
+      driver.kycStatus ||
+      (driver.accountStatus === "verified" ? "approved" : "not_submitted"),
+    rejectionReason: driver.kycRejectionReason,
+    kycRejectionReason: driver.kycRejectionReason,
+  });
+}
+
+export async function getKycStatus(req: Request, res: Response): Promise<void> {
+  const driver = await Driver.findById(req.user!.id)
+    .select("accountStatus kycStatus kycRejectionReason updatedAt")
+    .lean();
+  if (!driver) {
+    sendNotFound(res, "Driver not found");
+    return;
+  }
+
+  sendSuccess(res, "KYC status fetched", {
+    kycStatus:
+      driver.kycStatus ||
+      (driver.accountStatus === "verified" ? "approved" : "not_submitted"),
+    accountStatus: driver.accountStatus,
+    rejectionReason: driver.kycRejectionReason,
+    kycRejectionReason: driver.kycRejectionReason,
+    updatedAt: driver.updatedAt,
+  });
 }
 
 /**
@@ -523,13 +557,17 @@ export async function getWallet(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const [transactions, total] = await Promise.all([
+  const [transactions, total, rechargeRequests] = await Promise.all([
     Transaction.find({ userId: req.user!.id, userModel: "Driver" })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean(),
     Transaction.countDocuments({ userId: req.user!.id, userModel: "Driver" }),
+    RechargeRequest.find({ driverId: req.user!.id })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean(),
   ]);
 
   sendSuccess(
@@ -539,6 +577,7 @@ export async function getWallet(req: Request, res: Response): Promise<void> {
       walletBalance: driver.walletBalance,
       totalEarnings: driver.totalEarnings,
       transactions,
+      rechargeRequests,
     },
     200,
     { page, limit, total, totalPages: Math.ceil(total / limit) },
@@ -555,7 +594,7 @@ export async function requestWalletRecharge(
 ): Promise<void> {
   const { amount, paymentReference } = req.body as {
     amount: number;
-    paymentReference?: string;
+    paymentReference: string;
   };
 
   const driver = await Driver.findById(req.user!.id);
@@ -564,20 +603,31 @@ export async function requestWalletRecharge(
     return;
   }
 
-  const rechargeRequest = await RechargeRequest.create({
-    driverId: driver._id,
-    amount,
-    paymentReference,
-    status: "pending",
-    description: `Recharge request for ₹${amount}`,
-  });
+  try {
+    const rechargeRequest = await RechargeRequest.create({
+      driverId: driver._id,
+      amount,
+      paymentReference,
+      transactionId: paymentReference,
+      paymentScreenshotUrl: req.body.paymentScreenshotUrl,
+      status: "pending",
+      description: `Recharge request for ₹${amount}`,
+    });
 
-  sendSuccess(res, "Recharge request submitted for approval", {
-    requestId: rechargeRequest._id,
-    status: rechargeRequest.status,
-    amount: rechargeRequest.amount,
-    paymentReference: rechargeRequest.paymentReference,
-  });
+    sendSuccess(res, "Recharge request submitted for approval", {
+      requestId: rechargeRequest._id,
+      status: rechargeRequest.status,
+      amount: rechargeRequest.amount,
+      paymentReference: rechargeRequest.paymentReference,
+      walletBalance: driver.walletBalance,
+    });
+  } catch (err: any) {
+    if (err?.code === 11000) {
+      sendConflict(res, "paymentReference has already been used");
+      return;
+    }
+    throw err;
+  }
 }
 
 /**
@@ -588,36 +638,7 @@ export async function rechargeWallet(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const { amount, paymentReference } = req.body as {
-    amount: number;
-    paymentReference?: string;
-  };
-
-  const driver = await Driver.findById(req.user!.id);
-  if (!driver) {
-    sendNotFound(res, "Driver not found");
-    return;
-  }
-
-  const balanceBefore = driver.walletBalance;
-  driver.walletBalance += amount;
-  await driver.save();
-
-  await Transaction.create({
-    userId: driver._id,
-    userModel: "Driver",
-    type: "wallet_recharge",
-    amount,
-    balanceBefore,
-    balanceAfter: driver.walletBalance,
-    description: `Wallet recharged with ₹${amount}`,
-    status: "completed",
-    reference: paymentReference,
-  });
-
-  sendSuccess(res, `Wallet recharged with ₹${amount}`, {
-    walletBalance: driver.walletBalance,
-  });
+  await requestWalletRecharge(req, res);
 }
 
 /**

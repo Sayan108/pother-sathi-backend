@@ -89,6 +89,45 @@ describe("GET /api/rides/fare-estimate", () => {
     );
   });
 
+  it("should preserve toto as toto in fare estimate and ride details", async () => {
+    const fareRes = await request(app)
+      .get("/api/rides/fare-estimate")
+      .set("Authorization", `Bearer ${riderToken}`)
+      .query({
+        pickupLat: 22.5726,
+        pickupLng: 88.3639,
+        dropLat: 22.6,
+        dropLng: 88.4,
+        vehicleType: "toto",
+      });
+
+    expect(fareRes.status).toBe(200);
+
+    const ride = await Ride.create({
+      riderId: new mongoose.Types.ObjectId(riderId),
+      driverId: new mongoose.Types.ObjectId(verifiedDriverId),
+      pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
+      drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
+      distance: 5,
+      duration: 15,
+      vehicleType: "toto",
+      fare: 100,
+      platformFee: 15,
+      driverEarning: 85,
+      discount: 0,
+      paymentMethod: "cash",
+      otp: "5678",
+      status: "requested",
+    });
+
+    const detailsRes = await request(app)
+      .get(`/api/rides/${ride._id}`)
+      .set("Authorization", `Bearer ${riderToken}`);
+
+    expect(detailsRes.status).toBe(200);
+    expect(detailsRes.body.data.vehicleType).toBe("toto");
+  });
+
   it("should return 401 without token", async () => {
     const res = await request(app).get("/api/rides/fare-estimate").query({
       pickupLat: 22.5726,

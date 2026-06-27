@@ -276,7 +276,8 @@ describe("PATCH /api/driver/activate", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.data.accountStatus).toBe("verified");
+    expect(res.body.data.accountStatus).toBe("pending");
+    expect(res.body.data.kycStatus).toBe("pending");
   });
 
   it("should return 400 when licenseDocument/vehicleDocument are missing", async () => {
@@ -390,6 +391,16 @@ describe("PATCH /api/driver/online-status", () => {
     expect(res.status).toBe(403);
     expect(res.body.success).toBe(false);
   });
+
+  it("should block an unapproved driver from going online", async () => {
+    const res = await request(app)
+      .patch("/api/driver/online-status")
+      .set("Authorization", `Bearer ${driverToken}`)
+      .send({ isOnline: true });
+
+    expect(res.status).toBe(403);
+    expect(res.body.success).toBe(false);
+  });
 });
 
 // ── PATCH /api/driver/location ─────────────────────────────────────────────────
@@ -482,16 +493,19 @@ describe("GET /api/driver/wallet", () => {
 // ── POST /api/driver/wallet/recharge ──────────────────────────────────────────
 
 describe("POST /api/driver/wallet/recharge", () => {
-  it("should recharge wallet with valid amount", async () => {
+  it("should create a pending request instead of crediting wallet", async () => {
     const start = Date.now();
     const res = await request(app)
       .post("/api/driver/wallet/recharge")
       .set("Authorization", `Bearer ${verifiedDriverToken}`)
-      .send({ amount: 200 });
+      .send({ amount: 200, paymentReference: "DIRECT-REQ-1" });
     const time = Date.now() - start;
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+    expect(res.body.data.status).toBe("pending");
+    const driver = await Driver.findById(verifiedDriverId).lean();
+    expect(driver?.walletBalance).toBe(500);
     console.log(
       `[POST /api/driver/wallet/recharge] status=${res.status} time=${time}ms`,
     );
@@ -530,6 +544,40 @@ describe("POST /api/driver/wallet/recharge-request", () => {
     expect(res.body.data).toHaveProperty("requestId");
     expect(res.body.data).toHaveProperty("status", "pending");
     expect(res.body.data).toHaveProperty("amount", 500);
+  });
+
+  it("should block unapproved drivers from creating recharge requests", async () => {
+    const res = await request(app)
+      .post("/api/driver/wallet/recharge-request")
+      .set("Authorization", `Bearer ${driverToken}`)
+      .send({ amount: 500, paymentReference: "UNAPPROVED-REF" });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("should not change wallet balance when request is created", async () => {
+    const res = await request(app)
+      .post("/api/driver/wallet/recharge-request")
+      .set("Authorization", `Bearer ${verifiedDriverToken}`)
+      .send({ amount: 500, paymentReference: "NO-CREDIT-REF" });
+
+    expect(res.status).toBe(200);
+    const driver = await Driver.findById(verifiedDriverId).lean();
+    expect(driver?.walletBalance).toBe(500);
+  });
+
+  it("should reject duplicate payment references globally", async () => {
+    await request(app)
+      .post("/api/driver/wallet/recharge-request")
+      .set("Authorization", `Bearer ${verifiedDriverToken}`)
+      .send({ amount: 500, paymentReference: "DUPLICATE-REF" });
+
+    const res = await request(app)
+      .post("/api/driver/wallet/recharge-request")
+      .set("Authorization", `Bearer ${verifiedDriverToken}`)
+      .send({ amount: 500, paymentReference: "DUPLICATE-REF" });
+
+    expect(res.status).toBe(409);
   });
 });
 

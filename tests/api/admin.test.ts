@@ -10,6 +10,7 @@ import {
 } from "../setup/helpers";
 import { User } from "../../src/models/User";
 import { Driver } from "../../src/models/Driver";
+import { RechargeRequest } from "../../src/models/RechargeRequest";
 
 let app: Application;
 let adminToken: string;
@@ -82,6 +83,29 @@ describe("Admin recharge request approval", () => {
     expect(approveRes.body.data.walletBalance).toBe(1000);
   });
 
+  it("should not double-credit an already approved recharge request", async () => {
+    const requestRes = await request(app)
+      .post("/api/driver/wallet/recharge-request")
+      .set("Authorization", `Bearer ${driverToken}`)
+      .send({ amount: 500, paymentReference: "ONCE-ONLY" });
+
+    const requestId = requestRes.body.data.requestId;
+
+    const first = await request(app)
+      .patch(`/api/admin/driver/wallet/recharge-requests/${requestId}/approve`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send();
+    const second = await request(app)
+      .patch(`/api/admin/driver/wallet/recharge-requests/${requestId}/approve`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send();
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(400);
+    const driver = await Driver.findById(driverId).lean();
+    expect(driver?.walletBalance).toBe(1000);
+  });
+
   it("should reject a pending recharge request", async () => {
     const requestRes = await request(app)
       .post("/api/driver/wallet/recharge-request")
@@ -99,13 +123,35 @@ describe("Admin recharge request approval", () => {
     expect(rejectRes.status).toBe(200);
     expect(rejectRes.body.success).toBe(true);
     expect(rejectRes.body.data.status).toBe("rejected");
+    const driver = await Driver.findById(driverId).lean();
+    expect(driver?.walletBalance).toBe(500);
+  });
+
+  it("should preserve payment reference after rejection so it cannot be reused", async () => {
+    const recharge = await RechargeRequest.create({
+      driverId,
+      amount: 100,
+      paymentReference: "REJECTED-REF",
+      description: "test",
+    });
+    await request(app)
+      .patch(`/api/admin/driver/wallet/recharge-requests/${recharge._id}/reject`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ reason: "bad proof" });
+
+    const res = await request(app)
+      .post("/api/driver/wallet/recharge-request")
+      .set("Authorization", `Bearer ${driverToken}`)
+      .send({ amount: 100, paymentReference: "REJECTED-REF" });
+
+    expect(res.status).toBe(409);
   });
 
   it("should prevent non-admin users from approving requests", async () => {
     const requestRes = await request(app)
       .post("/api/driver/wallet/recharge-request")
       .set("Authorization", `Bearer ${driverToken}`)
-      .send({ amount: 300 });
+      .send({ amount: 300, paymentReference: "NONADMIN-REF" });
 
     expect(requestRes.status).toBe(200);
     const requestId = requestRes.body.data.requestId;

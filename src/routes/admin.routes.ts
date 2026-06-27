@@ -6,6 +6,7 @@ import {
   approveRechargeRequest,
   rejectRechargeRequest,
   getPendingDrivers,
+  getDriverKycDetails,
   verifyDriver,
   rejectDriver,
   adjustDriverWallet,
@@ -26,8 +27,12 @@ router.patch(
   rejectRechargeRequest,
 );
 router.get("/drivers/pending", getPendingDrivers);
+router.get("/drivers/kyc/pending", getPendingDrivers);
+router.get("/drivers/:id/kyc", getDriverKycDetails);
 router.patch("/drivers/:id/verify", verifyDriver);
+router.patch("/drivers/:id/kyc/approve", verifyDriver);
 router.patch("/drivers/:id/reject", rejectDriver);
+router.patch("/drivers/:id/kyc/reject", rejectDriver);
 router.patch(
   "/drivers/:id/wallet",
   [
