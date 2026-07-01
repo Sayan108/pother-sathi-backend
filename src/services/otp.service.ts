@@ -9,6 +9,12 @@ function isPlaceholderUrl(url: string): boolean {
 }
 
 function buildMessageCentralHeaders(): Record<string, string> {
+  const directAuthToken =
+    env.MESSAGE_CENTRAL_AUTH_TOKEN || env.MESSAGE_CENTRAL_API_KEY;
+  if (directAuthToken) {
+    return { authToken: directAuthToken };
+  }
+
   const headerName = env.MESSAGE_CENTRAL_API_KEY_HEADER_NAME || "Authorization";
   const prefix = env.MESSAGE_CENTRAL_API_KEY_PREFIX || "Bearer ";
   return {
@@ -26,8 +32,10 @@ function isMessageCentralConfigured(): boolean {
     env.MESSAGE_CENTRAL_CUSTOMER_ID &&
       (env.MESSAGE_CENTRAL_KEY || env.MESSAGE_CENTRAL_PASSWORD),
   );
-  const hasApiKeyAuth = Boolean(env.MESSAGE_CENTRAL_API_KEY);
-  if (!hasTokenAuth && !hasApiKeyAuth) return false;
+  const hasDirectAuthToken = Boolean(
+    env.MESSAGE_CENTRAL_AUTH_TOKEN || env.MESSAGE_CENTRAL_API_KEY,
+  );
+  if (!hasTokenAuth && !hasDirectAuthToken) return false;
 
   try {
     const parsed = new URL(env.MESSAGE_CENTRAL_API_URL);
@@ -138,10 +146,18 @@ async function fetchVerifyNowAuthToken(): Promise<string> {
 }
 
 async function getMessageCentralAuthHeaders(): Promise<Record<string, string>> {
+  const usingDirectAuthToken = Boolean(
+    env.MESSAGE_CENTRAL_AUTH_TOKEN || env.MESSAGE_CENTRAL_API_KEY,
+  );
   const usingTokenAuth = Boolean(
     env.MESSAGE_CENTRAL_CUSTOMER_ID &&
       (env.MESSAGE_CENTRAL_KEY || env.MESSAGE_CENTRAL_PASSWORD),
   );
+
+  if (usingDirectAuthToken) {
+    logger.info("Message Central auth mode: direct auth token");
+    return buildMessageCentralHeaders();
+  }
 
   if (usingTokenAuth) {
     logger.info("Message Central auth mode: token auth");
@@ -203,6 +219,26 @@ async function sendViaVerifyNow(
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             resolve(data);
           } else {
+            try {
+              const json = JSON.parse(data) as {
+                responseCode?: number | string;
+                message?: string;
+                data?: { responseCode?: number | string; verificationId?: string };
+              };
+              const responseCode = String(
+                json.data?.responseCode ?? json.responseCode,
+              );
+              if (
+                responseCode === "506" &&
+                json.message === "REQUEST_ALREADY_EXISTS" &&
+                json.data?.verificationId
+              ) {
+                resolve(data);
+                return;
+              }
+            } catch {
+              // Fall through to the original provider error below.
+            }
             const error = new Error(
               `VerifyNow send request failed: ${res.statusCode} ${data}`,
             );
@@ -225,9 +261,13 @@ async function sendViaVerifyNow(
   const json = JSON.parse(responseData) as {
     responseCode?: number | string;
     message?: string;
-    data?: { verificationId?: string };
+    data?: { responseCode?: number | string; verificationId?: string };
   };
-  if (String(json.responseCode) !== "200" || !json.data?.verificationId) {
+  const responseCode = String(json.data?.responseCode ?? json.responseCode);
+  if (
+    !["200", "506"].includes(responseCode) ||
+    !json.data?.verificationId
+  ) {
     throw new Error(
       `VerifyNow send failed: ${json.responseCode} ${json.message || "no message"}`,
     );
@@ -258,11 +298,10 @@ async function validateViaVerifyNow(
     const req = https.request(
       validateUrl,
       {
-        method: "POST",
+        method: "GET",
         headers: {
           ...authHeaders,
           accept: "application/json",
-          "Content-Length": 0,
         },
       },
       (res) => {
@@ -365,7 +404,7 @@ export async function sendOTP(
   await OTP.create({
     phone: safePhone,
     countryCode: safeCountryCode,
-    code: env.DEMO_MODE ? code : "",
+    ...(env.DEMO_MODE ? { code } : {}),
     verificationId: externalVerificationId,
     purpose,
     userType: safeUserType,

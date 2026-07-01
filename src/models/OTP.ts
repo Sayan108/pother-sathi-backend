@@ -7,7 +7,7 @@ export interface IOTP extends Document {
   _id: mongoose.Types.ObjectId;
   phone: string;
   countryCode: string;
-  code: string;
+  code?: string;
   purpose: OTPPurpose;
   userType: OTPUserType;
   verificationId?: string;
@@ -26,7 +26,12 @@ const otpSchema = new Schema<IOTP>(
       match: [/^\d{10,15}$/, "Invalid phone number"],
     },
     countryCode: { type: String, default: "+91" },
-    code: { type: String, required: true },
+    code: {
+      type: String,
+      required: function (this: IOTP) {
+        return !this.verificationId;
+      },
+    },
     verificationId: { type: String, trim: true },
     purpose: {
       type: String,
