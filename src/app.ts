@@ -1,5 +1,5 @@
 import express, { Application } from "express";
-import cors from "cors";
+import cors, { CorsOptions } from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
@@ -15,6 +15,14 @@ import driverRoutes from "./routes/driver.routes";
 import rideRoutes from "./routes/ride.routes";
 import adminRoutes from "./routes/admin.routes";
 
+const corsOptions: CorsOptions = {
+  origin: true,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204,
+};
+
 export function createApp(): Application {
   const app = express();
 
@@ -25,14 +33,8 @@ export function createApp(): Application {
     }),
   );
 
-  app.use(
-    cors({
-      origin: true,
-      credentials: true,
-      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
-    }),
-  );
+  app.use(cors(corsOptions));
+  app.options("*", cors(corsOptions));
 
   // Global rate limiter (skip in test environment)
   if (env.NODE_ENV !== "test") {

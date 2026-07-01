@@ -18,9 +18,17 @@ function buildMessageCentralHeaders(): Record<string, string> {
 }
 
 function isMessageCentralConfigured(): boolean {
-  if (!env.MESSAGE_CENTRAL_API_URL || !env.MESSAGE_CENTRAL_API_KEY) {
+  if (!env.MESSAGE_CENTRAL_API_URL) {
     return false;
   }
+
+  const hasTokenAuth = Boolean(
+    env.MESSAGE_CENTRAL_CUSTOMER_ID &&
+      (env.MESSAGE_CENTRAL_KEY || env.MESSAGE_CENTRAL_PASSWORD),
+  );
+  const hasApiKeyAuth = Boolean(env.MESSAGE_CENTRAL_API_KEY);
+  if (!hasTokenAuth && !hasApiKeyAuth) return false;
+
   try {
     const parsed = new URL(env.MESSAGE_CENTRAL_API_URL);
     if (!parsed.protocol.startsWith("http")) return false;
@@ -31,16 +39,33 @@ function isMessageCentralConfigured(): boolean {
   }
 }
 
-async function fetchVerifyNowAuthToken(): Promise<string> {
-  if (!env.MESSAGE_CENTRAL_CUSTOMER_ID || !env.MESSAGE_CENTRAL_KEY) {
+function getVerifyNowTokenKey(): string {
+  if (env.MESSAGE_CENTRAL_PASSWORD) {
+    return Buffer.from(env.MESSAGE_CENTRAL_PASSWORD, "utf8").toString("base64");
+  }
+
+  if (env.MESSAGE_CENTRAL_KEY.includes(".")) {
     throw new Error(
-      "Message Central VerifyNow auth token cannot be fetched without MESSAGE_CENTRAL_CUSTOMER_ID and MESSAGE_CENTRAL_KEY",
+      "MESSAGE_CENTRAL_KEY must be the base64-encoded Message Central password/key, not the API JWT token. Set MESSAGE_CENTRAL_PASSWORD to the raw password or MESSAGE_CENTRAL_KEY to its base64 value.",
+    );
+  }
+
+  return env.MESSAGE_CENTRAL_KEY;
+}
+
+async function fetchVerifyNowAuthToken(): Promise<string> {
+  if (
+    !env.MESSAGE_CENTRAL_CUSTOMER_ID ||
+    (!env.MESSAGE_CENTRAL_KEY && !env.MESSAGE_CENTRAL_PASSWORD)
+  ) {
+    throw new Error(
+      "Message Central VerifyNow auth token cannot be fetched without MESSAGE_CENTRAL_CUSTOMER_ID and MESSAGE_CENTRAL_KEY or MESSAGE_CENTRAL_PASSWORD",
     );
   }
 
   const query = new URLSearchParams({
     customerId: env.MESSAGE_CENTRAL_CUSTOMER_ID,
-    key: env.MESSAGE_CENTRAL_KEY,
+    key: getVerifyNowTokenKey(),
     scope: "NEW",
   });
   if (env.MESSAGE_CENTRAL_EMAIL) {
@@ -104,8 +129,9 @@ async function fetchVerifyNowAuthToken(): Promise<string> {
   const authToken =
     json.authToken ?? json.token ?? json.data?.authToken ?? json.data?.token;
   if (!authToken) {
+    const providerMessage = json.message ?? json.error ?? json.responseMessage;
     throw new Error(
-      `Failed to obtain VerifyNow auth token; response was: ${responseData}`,
+      `Failed to obtain VerifyNow auth token${providerMessage ? `: ${providerMessage}` : ""}`,
     );
   }
   return authToken;
@@ -113,24 +139,14 @@ async function fetchVerifyNowAuthToken(): Promise<string> {
 
 async function getMessageCentralAuthHeaders(): Promise<Record<string, string>> {
   const usingTokenAuth = Boolean(
-    env.MESSAGE_CENTRAL_CUSTOMER_ID && env.MESSAGE_CENTRAL_KEY,
+    env.MESSAGE_CENTRAL_CUSTOMER_ID &&
+      (env.MESSAGE_CENTRAL_KEY || env.MESSAGE_CENTRAL_PASSWORD),
   );
 
   if (usingTokenAuth) {
     logger.info("Message Central auth mode: token auth");
-    try {
-      const authToken = await fetchVerifyNowAuthToken();
-      return { authToken };
-    } catch (error) {
-      logger.warn(
-        "Message Central token auth failed; falling back to API key auth",
-        {
-          error: error instanceof Error ? error.message : error,
-        },
-      );
-      logger.info("Message Central auth mode: API key auth (fallback)");
-      return buildMessageCentralHeaders();
-    }
+    const authToken = await fetchVerifyNowAuthToken();
+    return { authToken };
   }
 
   logger.info("Message Central auth mode: API key auth");
@@ -138,18 +154,19 @@ async function getMessageCentralAuthHeaders(): Promise<Record<string, string>> {
 }
 
 async function sendViaVerifyNow(
-  to: string,
+  phone: string,
   countryCode: string,
 ): Promise<{ verificationId: string }> {
   const authHeaders = await getMessageCentralAuthHeaders();
   const safeCountryCode = countryCode.replace(/[^\d]/g, "");
+  const safePhone = phone.replace(/[^\d]/g, "");
   const query = new URLSearchParams({
     ...(env.MESSAGE_CENTRAL_CUSTOMER_ID
       ? { customerId: env.MESSAGE_CENTRAL_CUSTOMER_ID }
       : {}),
     countryCode: safeCountryCode,
     flowType: "SMS",
-    mobileNumber: to,
+    mobileNumber: safePhone,
     otpLength: "6",
   });
 
@@ -159,7 +176,7 @@ async function sendViaVerifyNow(
 
   logger.debug("Message Central send OTP request", {
     url: sendUrl.toString(),
-    to,
+    phone: safePhone,
     countryCode,
   });
 
@@ -341,10 +358,7 @@ export async function sendOTP(
 
   let externalVerificationId: string | undefined;
   if (!env.DEMO_MODE) {
-    const result = await sendViaVerifyNow(
-      `${safeCountryCode}${safePhone}`,
-      safeCountryCode,
-    );
+    const result = await sendViaVerifyNow(safePhone, safeCountryCode);
     externalVerificationId = result.verificationId;
   }
 

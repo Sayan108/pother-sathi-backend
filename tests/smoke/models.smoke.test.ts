@@ -192,17 +192,19 @@ describe("SMOKE: Models", () => {
       const ride = await Ride.create({
         riderId: rider._id,
         driverId: driver._id,
-        pickupLocation: {
-          type: "Point",
-          coordinates: [88.3639, 22.5431],
+        pickup: {
+          lat: 22.5431,
+          lng: 88.3639,
           address: "Pickup Point",
         },
-        dropLocation: {
-          type: "Point",
-          coordinates: [88.3740, 22.5532],
+        drop: {
+          lat: 22.5532,
+          lng: 88.3740,
           address: "Drop Point",
         },
+        vehicleType: "auto",
         fare: 150,
+        otp: "1234",
         status: "accepted",
       });
 
@@ -227,15 +229,17 @@ describe("SMOKE: Models", () => {
       const ride = await Ride.create({
         riderId: rider._id,
         driverId: driver._id,
-        pickupLocation: {
-          type: "Point",
-          coordinates: [88.3639, 22.5431],
+        pickup: {
+          lat: 22.5431,
+          lng: 88.3639,
         },
-        dropLocation: {
-          type: "Point",
-          coordinates: [88.3740, 22.5532],
+        drop: {
+          lat: 22.5532,
+          lng: 88.3740,
         },
+        vehicleType: "auto",
         fare: 150,
+        otp: "1234",
         status: "accepted",
       });
 
@@ -343,6 +347,7 @@ describe("SMOKE: Models", () => {
         amount: 500,
         balanceBefore: 0,
         balanceAfter: 500,
+        description: "Wallet recharge",
         status: "completed",
       });
 
@@ -364,6 +369,8 @@ describe("SMOKE: Models", () => {
       const request = await RechargeRequest.create({
         driverId: driver._id,
         amount: 500,
+        paymentReference: "UPI-REF-001",
+        description: "Driver wallet recharge",
         purpose: "wallet_recharge",
         status: "pending",
       });
@@ -383,6 +390,8 @@ describe("SMOKE: Models", () => {
       const request = await RechargeRequest.create({
         driverId: driver._id,
         amount: 500,
+        paymentReference: "UPI-REF-002",
+        description: "Driver wallet recharge",
         purpose: "wallet_recharge",
         status: "pending",
       });
