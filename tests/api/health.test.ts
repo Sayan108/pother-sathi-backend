@@ -45,6 +45,21 @@ describe('GET /api/health', () => {
   });
 });
 
+describe('CORS preflight', () => {
+  it('should allow browser preflight requests with custom headers', async () => {
+    const res = await request(app)
+      .options('/api/health')
+      .set('Origin', 'https://any-frontend.example')
+      .set('Access-Control-Request-Method', 'GET')
+      .set('Access-Control-Request-Headers', 'content-type,authorization,x-client-version');
+
+    expect(res.status).toBe(204);
+    expect(res.headers['access-control-allow-origin']).toBe('https://any-frontend.example');
+    expect(res.headers['access-control-allow-credentials']).toBe('true');
+    expect(res.headers['access-control-allow-headers']).toContain('x-client-version');
+  });
+});
+
 describe('404 handling', () => {
   it('should return 404 for unknown routes', async () => {
     const res = await request(app).get('/api/nonexistent');

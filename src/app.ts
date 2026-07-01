@@ -1,9 +1,10 @@
 import express, { Application } from "express";
-import cors, { CorsOptions } from "cors";
+import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 import { env } from "./config/environment";
+import { corsOptions } from "./config/cors";
 import { logger } from "./utils/logger";
 import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
 
@@ -14,14 +15,6 @@ import riderRoutes from "./routes/rider.routes";
 import driverRoutes from "./routes/driver.routes";
 import rideRoutes from "./routes/ride.routes";
 import adminRoutes from "./routes/admin.routes";
-
-const corsOptions: CorsOptions = {
-  origin: true,
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  optionsSuccessStatus: 204,
-};
 
 export function createApp(): Application {
   const app = express();

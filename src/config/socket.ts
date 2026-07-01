@@ -1,25 +1,19 @@
 import { Server as HttpServer } from "http";
 import { Server as SocketServer } from "socket.io";
 import { logger } from "../utils/logger";
+import { socketCorsOptions } from "./cors";
 
 let io: SocketServer | null = null;
 
 export function initSocketServer(httpServer: HttpServer): SocketServer {
-  const corsConfig = {
-    origin: true,
-    methods: ["GET", "POST"],
-    credentials: true,
-  };
-
   io = new SocketServer(httpServer, {
-    cors: corsConfig,
+    cors: socketCorsOptions,
     transports: ["websocket", "polling"],
     pingInterval: 10000,
     pingTimeout: 5000,
   });
 
   logger.info("Socket.io server initialized");
-  logger.info("Socket.io CORS set to allow all origins");
 
   return io;
 }

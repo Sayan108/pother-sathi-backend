@@ -43,6 +43,10 @@ export const env = {
 
   // App
   FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:3000",
+  CORS_ORIGINS: (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   PLATFORM_FEE_PERCENT: parseFloat(process.env.PLATFORM_FEE_PERCENT || "15"),
 
   // Driver wallet
