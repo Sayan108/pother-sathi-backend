@@ -5,6 +5,9 @@ import {
   getRechargeRequests,
   approveRechargeRequest,
   rejectRechargeRequest,
+  getDrivers,
+  getRiders,
+  getUnionLeaders,
   getPendingDrivers,
   getDriverKycDetails,
   verifyDriver,
@@ -26,8 +29,11 @@ router.patch(
   "/driver/wallet/recharge-requests/:id/reject",
   rejectRechargeRequest,
 );
+router.get("/drivers", getDrivers);
 router.get("/drivers/pending", getPendingDrivers);
 router.get("/drivers/kyc/pending", getPendingDrivers);
+router.get("/riders", getRiders);
+router.get("/leaders", getUnionLeaders);
 router.get("/drivers/:id/kyc", getDriverKycDetails);
 router.patch("/drivers/:id/verify", verifyDriver);
 router.patch("/drivers/:id/kyc/approve", verifyDriver);

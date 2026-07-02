@@ -167,6 +167,75 @@ describe("Admin recharge request approval", () => {
 });
 
 describe("Admin driver approvals and wallet control", () => {
+  it("should list drivers for the admin dashboard", async () => {
+    const res = await request(app)
+      .get("/api/admin/drivers?page=1&limit=1")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.drivers).toHaveLength(1);
+    expect(res.body.data.drivers[0]).toMatchObject({
+      phone: "9876543218",
+      name: "Approved Driver",
+      kycDocuments: {},
+    });
+    expect(res.body.meta).toMatchObject({
+      page: 1,
+      limit: 1,
+      total: 1,
+      totalPages: 1,
+    });
+  });
+
+  it("should list riders for the admin dashboard", async () => {
+    await User.create({
+      phone: "9876543215",
+      countryCode: "+91",
+      role: "rider",
+      name: "Test Rider",
+      isVerified: true,
+      walletBalance: 100,
+    });
+
+    const res = await request(app)
+      .get("/api/admin/riders?page=1&limit=20")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.riders).toHaveLength(1);
+    expect(res.body.data.riders[0]).toMatchObject({
+      phone: "9876543215",
+      role: "rider",
+      name: "Test Rider",
+    });
+  });
+
+  it("should list union leaders for the admin dashboard", async () => {
+    await Driver.findByIdAndUpdate(driverId, {
+      $set: {
+        isUnionLeader: true,
+        referralCode: "LEADER01",
+        referralCount: 2,
+      },
+    });
+
+    const res = await request(app)
+      .get("/api/admin/leaders?page=1&limit=20")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.leaders).toHaveLength(1);
+    expect(res.body.data.leaders[0]).toMatchObject({
+      phone: "9876543218",
+      isUnionLeader: true,
+      referralCode: "LEADER01",
+      referralCount: 2,
+    });
+  });
+
   it("should return KYC documents with pending drivers", async () => {
     await Driver.create({
       phone: "9876543216",

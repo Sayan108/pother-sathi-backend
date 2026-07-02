@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { Request, Response } from "express";
+import { User } from "../models/User";
 import { Driver } from "../models/Driver";
 import { RechargeRequest } from "../models/RechargeRequest";
 import { Transaction } from "../models/Transaction";
@@ -26,13 +27,25 @@ function withKycDocuments<T extends AdminDriverListItem>(driver: T): T {
   };
 }
 
+function getPagination(req: Request, defaultLimit = 20, maxLimit = 100) {
+  const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+  const limit = Math.min(
+    Math.max(parseInt(req.query.limit as string) || defaultLimit, 1),
+    maxLimit,
+  );
+
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+  };
+}
+
 export async function getRechargeRequests(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const page = parseInt(req.query.page as string) || 1;
-  const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = getPagination(req);
 
   const status = (req.query.status as string) || "pending";
   const filter: Record<string, unknown> = {};
@@ -56,13 +69,90 @@ export async function getRechargeRequests(
   });
 }
 
+export async function getDrivers(req: Request, res: Response): Promise<void> {
+  const { page, limit, skip } = getPagination(req);
+  const status = req.query.status as string | undefined;
+  const filter: Record<string, unknown> = {};
+  if (status) {
+    filter.$or = [{ accountStatus: status }, { kycStatus: status }];
+  }
+
+  const [drivers, total] = await Promise.all([
+    Driver.find(filter)
+      .select(
+        "phone countryCode name email dob gender vehicleType vehicleModel vehicleNumber vehicleColor vehicleYear serviceArea accountStatus kycStatus kycRejectionReason walletBalance totalEarnings rating totalRatings totalRides aadhaarNumber licenseNumber aadhaarDocument licenseDocument selfieDocument vehicleDocument licenseExpiry isUnionLeader referralCode referralCount isOnline isAvailable isActive isVerified createdAt updatedAt",
+      )
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Driver.countDocuments(filter),
+  ]);
+
+  sendSuccess(res, "Drivers fetched", {
+    drivers: drivers.map(withKycDocuments),
+  }, 200, {
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit),
+  });
+}
+
+export async function getRiders(req: Request, res: Response): Promise<void> {
+  const { page, limit, skip } = getPagination(req);
+
+  const [riders, total] = await Promise.all([
+    User.find({ role: "rider" })
+      .select(
+        "phone countryCode role name email avatar dob gender rating totalRatings totalRides walletBalance isActive isVerified createdAt updatedAt",
+      )
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    User.countDocuments({ role: "rider" }),
+  ]);
+
+  sendSuccess(res, "Riders fetched", { riders }, 200, {
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit),
+  });
+}
+
+export async function getUnionLeaders(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { page, limit, skip } = getPagination(req);
+
+  const [leaders, total] = await Promise.all([
+    Driver.find({ isUnionLeader: true })
+      .select(
+        "phone countryCode name email vehicleType vehicleModel vehicleNumber accountStatus kycStatus walletBalance totalEarnings rating totalRatings totalRides isUnionLeader referralCode referralCount isActive isVerified createdAt updatedAt",
+      )
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Driver.countDocuments({ isUnionLeader: true }),
+  ]);
+
+  sendSuccess(res, "Union leaders fetched", { leaders }, 200, {
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit),
+  });
+}
+
 export async function getPendingDrivers(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const page = parseInt(req.query.page as string) || 1;
-  const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = getPagination(req);
 
   const [drivers, total] = await Promise.all([
     Driver.find({ $or: [{ accountStatus: "pending" }, { kycStatus: "pending" }] })
