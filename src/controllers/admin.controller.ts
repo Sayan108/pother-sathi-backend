@@ -6,6 +6,26 @@ import { Transaction } from "../models/Transaction";
 import { env } from "../config/environment";
 import { sendSuccess, sendError, sendNotFound } from "../utils/response";
 
+type AdminDriverListItem = {
+  aadhaarDocument?: string;
+  licenseDocument?: string;
+  selfieDocument?: string;
+  vehicleDocument?: string;
+  [key: string]: unknown;
+};
+
+function withKycDocuments<T extends AdminDriverListItem>(driver: T): T {
+  return {
+    ...driver,
+    kycDocuments: {
+      aadhaarDocument: driver.aadhaarDocument,
+      licenseDocument: driver.licenseDocument,
+      selfieDocument: driver.selfieDocument,
+      vehicleDocument: driver.vehicleDocument,
+    },
+  };
+}
+
 export async function getRechargeRequests(
   req: Request,
   res: Response,
@@ -47,7 +67,7 @@ export async function getPendingDrivers(
   const [drivers, total] = await Promise.all([
     Driver.find({ $or: [{ accountStatus: "pending" }, { kycStatus: "pending" }] })
       .select(
-        "phone countryCode name vehicleType vehicleModel vehicleNumber accountStatus kycStatus kycRejectionReason walletBalance aadhaarNumber licenseNumber aadhaarDocument licenseDocument selfieDocument vehicleDocument createdAt",
+        "phone countryCode name email dob gender vehicleType vehicleModel vehicleNumber vehicleColor vehicleYear serviceArea accountStatus kycStatus kycRejectionReason walletBalance aadhaarNumber licenseNumber aadhaarDocument licenseDocument selfieDocument vehicleDocument licenseExpiry createdAt updatedAt",
       )
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -56,7 +76,9 @@ export async function getPendingDrivers(
     Driver.countDocuments({ $or: [{ accountStatus: "pending" }, { kycStatus: "pending" }] }),
   ]);
 
-  sendSuccess(res, "Pending driver approvals fetched", { drivers }, 200, {
+  sendSuccess(res, "Pending driver approvals fetched", {
+    drivers: drivers.map(withKycDocuments),
+  }, 200, {
     page,
     limit,
     total,

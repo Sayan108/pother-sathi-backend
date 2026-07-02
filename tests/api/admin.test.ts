@@ -167,6 +167,54 @@ describe("Admin recharge request approval", () => {
 });
 
 describe("Admin driver approvals and wallet control", () => {
+  it("should return KYC documents with pending drivers", async () => {
+    await Driver.create({
+      phone: "9876543216",
+      countryCode: "+91",
+      accountStatus: "pending",
+      kycStatus: "pending",
+      name: "Pending Driver",
+      email: "pending@example.com",
+      vehicleType: "bike",
+      vehicleModel: "Honda Shine",
+      vehicleNumber: "WB12AB1234",
+      vehicleColor: "Black",
+      vehicleYear: "2024",
+      serviceArea: "Kolkata",
+      aadhaarNumber: "123456789012",
+      licenseNumber: "WB0120230001234",
+      aadhaarDocument: "https://example.com/aadhaar.jpg",
+      licenseDocument: "https://example.com/license.jpg",
+      selfieDocument: "https://example.com/selfie.jpg",
+      vehicleDocument: "https://example.com/vehicle.jpg",
+      licenseExpiry: new Date("2030-12-31"),
+      isActive: true,
+      walletBalance: 0,
+    });
+
+    const res = await request(app)
+      .get("/api/admin/drivers/kyc/pending")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.drivers).toHaveLength(1);
+    expect(res.body.data.drivers[0]).toMatchObject({
+      name: "Pending Driver",
+      email: "pending@example.com",
+      aadhaarDocument: "https://example.com/aadhaar.jpg",
+      licenseDocument: "https://example.com/license.jpg",
+      selfieDocument: "https://example.com/selfie.jpg",
+      vehicleDocument: "https://example.com/vehicle.jpg",
+      kycDocuments: {
+        aadhaarDocument: "https://example.com/aadhaar.jpg",
+        licenseDocument: "https://example.com/license.jpg",
+        selfieDocument: "https://example.com/selfie.jpg",
+        vehicleDocument: "https://example.com/vehicle.jpg",
+      },
+    });
+  });
+
   it("should verify a pending driver and credit verification bonus", async () => {
     const pendingDriver = await Driver.create({
       phone: "9876543217",
