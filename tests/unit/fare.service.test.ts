@@ -40,6 +40,18 @@ describe('calculateFare', () => {
     expect(fare.estimatedDuration).toBeGreaterThan(0);
   });
 
+  it('should calculate fare with a supplied base price config', () => {
+    const fare = calculateFare(2, 'auto', undefined, {
+      basePrice: 100,
+      pricePerKm: 25,
+      minimumFare: 10,
+    });
+
+    expect(fare.baseFare).toBe(100);
+    expect(fare.distanceFare).toBe(50);
+    expect(fare.totalFare).toBe(150);
+  });
+
   it('should apply minimum fare for very short distances', () => {
     const fare = calculateFare(0.1, 'bike');
     // Min fare for bike is 40

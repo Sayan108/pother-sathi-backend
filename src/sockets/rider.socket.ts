@@ -42,7 +42,7 @@ export function registerRiderSocketHandlers(
       // Calculate distance and fare
       const {
         calculateDistance,
-        calculateFare,
+        calculateFareFromBasePrice,
         validateCoupon,
       } = require("../services/fare.service");
       const distanceKm = calculateDistance(
@@ -51,7 +51,11 @@ export function registerRiderSocketHandlers(
         drop.lat,
         drop.lng,
       );
-      const fareBreakdown = calculateFare(distanceKm, vehicleType, couponCode);
+      const fareBreakdown = await calculateFareFromBasePrice(
+        distanceKm,
+        vehicleType,
+        couponCode,
+      );
       const { Driver } = require("../models/Driver");
       let availableDrivers = await Driver.find({
         vehicleType,
@@ -117,7 +121,7 @@ export function registerRiderSocketHandlers(
       } = data;
       const {
         calculateDistance,
-        calculateFare,
+        calculateFareFromBasePrice,
         validateCoupon,
       } = require("../services/fare.service");
       const { Driver } = require("../models/Driver");
@@ -152,7 +156,11 @@ export function registerRiderSocketHandlers(
         drop.lat,
         drop.lng,
       );
-      const fareBreakdown = calculateFare(distanceKm, vehicleType, couponCode);
+      const fareBreakdown = await calculateFareFromBasePrice(
+        distanceKm,
+        vehicleType,
+        couponCode,
+      );
       const driverFilter = {
         vehicleType,
         $or: [{ accountStatus: "verified" }, { kycStatus: "approved" }],

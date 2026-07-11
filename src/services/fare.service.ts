@@ -1,7 +1,22 @@
 import { env } from '../config/environment';
 import { VehicleType } from '../models/Driver';
+import { BasePrice } from '../models/BasePrice';
 
-// Base fare per km by vehicle type (in INR)
+export interface FareConfig {
+  basePrice: number;
+  pricePerKm: number;
+  minimumFare: number;
+}
+
+export const DEFAULT_FARE_CONFIG: Record<VehicleType, FareConfig> = {
+  bike: { basePrice: 20, pricePerKm: 8, minimumFare: 40 },
+  auto: { basePrice: 30, pricePerKm: 15, minimumFare: 70 },
+  toto: { basePrice: 25, pricePerKm: 12, minimumFare: 55 },
+  car: { basePrice: 40, pricePerKm: 20, minimumFare: 80 },
+  delivery: { basePrice: 25, pricePerKm: 10, minimumFare: 50 },
+};
+
+// Backward-compatible maps for callers/tests that use the sync calculator.
 const FARE_PER_KM: Record<VehicleType, number> = {
   bike: 8,
   auto: 15,
@@ -54,11 +69,17 @@ const COUPONS: Record<string, { discountAmount: number; maxUses: number }> = {
 export function calculateFare(
   distanceKm: number,
   vehicleType: VehicleType,
-  couponCode?: string
+  couponCode?: string,
+  fareConfig?: FareConfig,
 ): FareBreakdown {
-  const base = BASE_FARE[vehicleType];
-  const perKm = FARE_PER_KM[vehicleType];
-  const minFare = MIN_FARE[vehicleType];
+  const config = fareConfig || {
+    basePrice: BASE_FARE[vehicleType],
+    pricePerKm: FARE_PER_KM[vehicleType],
+    minimumFare: MIN_FARE[vehicleType],
+  };
+  const base = config.basePrice;
+  const perKm = config.pricePerKm;
+  const minFare = config.minimumFare;
 
   const rawFare = base + distanceKm * perKm;
   const totalFare = Math.max(rawFare, minFare);
@@ -91,6 +112,26 @@ export function calculateFare(
     finalFare,
     estimatedDuration,
   };
+}
+
+export async function getFareConfig(vehicleType: VehicleType): Promise<FareConfig> {
+  const price = await BasePrice.findOne({ vehicleType, isActive: true }).lean();
+  if (!price) return DEFAULT_FARE_CONFIG[vehicleType];
+
+  return {
+    basePrice: price.basePrice,
+    pricePerKm: price.pricePerKm,
+    minimumFare: price.minimumFare,
+  };
+}
+
+export async function calculateFareFromBasePrice(
+  distanceKm: number,
+  vehicleType: VehicleType,
+  couponCode?: string,
+): Promise<FareBreakdown> {
+  const fareConfig = await getFareConfig(vehicleType);
+  return calculateFare(distanceKm, vehicleType, couponCode, fareConfig);
 }
 
 /**

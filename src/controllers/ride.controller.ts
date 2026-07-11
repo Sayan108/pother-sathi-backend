@@ -6,7 +6,7 @@ import { Driver, VehicleType } from "../models/Driver";
 import { User } from "../models/User";
 import { Transaction } from "../models/Transaction";
 import {
-  calculateFare,
+  calculateFareFromBasePrice,
   calculateDistance,
   validateCoupon,
 } from "../services/fare.service";
@@ -550,7 +550,7 @@ export async function getFareEstimate(
     parseFloat(dropLng),
   );
 
-  const fareBreakdown = calculateFare(
+  const fareBreakdown = await calculateFareFromBasePrice(
     distanceKm,
     vehicleType as VehicleType,
     couponCode,

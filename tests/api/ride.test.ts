@@ -10,6 +10,7 @@ import { createApp } from "../../src/app";
 import { User } from "../../src/models/User";
 import { Driver } from "../../src/models/Driver";
 import { Ride } from "../../src/models/Ride";
+import { BasePrice } from "../../src/models/BasePrice";
 import {
   connectTestDB,
   disconnectTestDB,
@@ -126,6 +127,31 @@ describe("GET /api/rides/fare-estimate", () => {
 
     expect(detailsRes.status).toBe(200);
     expect(detailsRes.body.data.vehicleType).toBe("toto");
+  });
+
+  it("should calculate fare estimate from admin base price settings", async () => {
+    await BasePrice.create({
+      vehicleType: "auto",
+      basePrice: 100,
+      pricePerKm: 25,
+      minimumFare: 10,
+      isActive: true,
+    });
+
+    const res = await request(app)
+      .get("/api/rides/fare-estimate")
+      .set("Authorization", `Bearer ${riderToken}`)
+      .query({
+        pickupLat: 22.5726,
+        pickupLng: 88.3639,
+        dropLat: 22.5726,
+        dropLng: 88.3639,
+        vehicleType: "auto",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.baseFare).toBe(100);
+    expect(res.body.data.totalFare).toBe(100);
   });
 
   it("should return 401 without token", async () => {
