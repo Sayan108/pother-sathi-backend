@@ -7,6 +7,16 @@ import { riderSocketMap } from "../controllers/ride.controller";
 import { env } from "../config/environment";
 import { logger } from "../utils/logger";
 
+function getLiveDriverSocketId(driver: any): string | undefined {
+  const driverId = driver?._id?.toString();
+  if (!driverId) return undefined;
+  return driverSocketMap.get(driverId);
+}
+
+function filterLiveDrivers(drivers: any[]) {
+  return drivers.filter((driver) => Boolean(getLiveDriverSocketId(driver)));
+}
+
 export function registerRiderSocketHandlers(
   io: SocketServer,
   socket: AuthenticatedSocket,
@@ -69,10 +79,12 @@ export function registerRiderSocketHandlers(
         }).lean();
       }
 
+      const liveDrivers = filterLiveDrivers(availableDrivers);
+
       cb({
         success: true,
         fareBreakdown,
-        availableDrivers: availableDrivers.map((d: any) => ({
+        availableDrivers: liveDrivers.map((d: any) => ({
           _id: d._id,
           name: d.name,
           phone: d.phone,
@@ -164,13 +176,15 @@ export function registerRiderSocketHandlers(
         }).lean();
       }
 
-      if (!availableDrivers.length) {
+      const liveDrivers = filterLiveDrivers(availableDrivers);
+
+      if (!liveDrivers.length) {
         cb({ success: false, error: "No drivers available" });
         return;
       }
 
       const assignedDriver =
-        availableDrivers[Math.floor(Math.random() * availableDrivers.length)];
+        liveDrivers[Math.floor(Math.random() * liveDrivers.length)];
       const otp = Math.floor(1000 + Math.random() * 9000).toString();
       const ride = await Ride.create({
         riderId,
@@ -189,11 +203,13 @@ export function registerRiderSocketHandlers(
         otp,
         status: "requested",
       });
+      const rider = await User.findById(riderId)
+        .select("name phone avatar rating")
+        .lean();
 
       // Notify driver if online. Prefer the in-memory socket map, fallback to DB socketId.
       const assignedDriverId = assignedDriver._id.toString();
-      const driverSocketId =
-        driverSocketMap.get(assignedDriverId) || assignedDriver.socketId;
+      const driverSocketId = getLiveDriverSocketId(assignedDriver);
       if (driverSocketId) {
         const rideRequestPayload = {
           rideId: ride._id,
@@ -205,7 +221,18 @@ export function registerRiderSocketHandlers(
           driverEarning: ride.driverEarning,
           paymentMethod: ride.paymentMethod,
           riderId,
+          rider: rider
+            ? {
+                name: rider.name,
+                phone: rider.phone,
+                avatar: rider.avatar,
+                rating: rider.rating,
+              }
+            : undefined,
           vehicleType: ride.vehicleType,
+          distance: `${Number(distanceKm).toFixed(1)} km`,
+          distanceKm,
+          estimatedDuration: fareBreakdown.estimatedDuration,
         };
         io.to(driverSocketId).emit("ride:request", rideRequestPayload);
         io.to(driverSocketId).emit("ride:assigned", rideRequestPayload);

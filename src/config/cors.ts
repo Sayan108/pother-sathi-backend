@@ -19,7 +19,14 @@ export const corsOptions: CorsOptions = {
 };
 
 export const socketCorsOptions = {
-  origin: isOriginAllowed,
+  origin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+    if (isOriginAllowed(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`Origin ${origin} is not allowed by CORS`));
+  },
   methods: ["GET", "POST"],
   credentials: true,
 };

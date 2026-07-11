@@ -411,9 +411,22 @@ export async function registerDriverSocketHandlers(
 
   socket.on("disconnect", async (reason) => {
     logger.debug(`Driver ${driverId} disconnected: ${reason}`);
-    driverSocketMap.delete(driverId);
-    await Driver.findByIdAndUpdate(driverId, {
-      $set: { isOnline: false, isAvailable: false, socketId: null },
-    });
+    const remainingSockets = await io.in(`driver:${driverId}`).fetchSockets();
+    const replacementSocket = remainingSockets.find((s) => s.id !== socket.id);
+
+    if (replacementSocket) {
+      driverSocketMap.set(driverId, replacementSocket.id);
+      await Driver.findByIdAndUpdate(driverId, {
+        $set: { socketId: replacementSocket.id },
+      });
+      return;
+    }
+
+    if (driverSocketMap.get(driverId) === socket.id) {
+      driverSocketMap.delete(driverId);
+      await Driver.findByIdAndUpdate(driverId, {
+        $set: { isOnline: false, isAvailable: false, socketId: null },
+      });
+    }
   });
 }

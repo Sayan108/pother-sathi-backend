@@ -1,0 +1,143 @@
+name: Deploy to Hostinger VPS
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hostinger-production
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 20.x
+  APP_NAME: pothersathi-backend
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH || '/var/www/pothersathi-backend' }}
+      VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate deployment secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          test -n "${VPS_HOST}"
+          test -n "${VPS_USER}"
+          test -n "${VPS_SSH_KEY}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npm test
+        env:
+          NODE_ENV: test
+          MONGODB_URI: mongodb://127.0.0.1:27017/pothersathi_ci
+          JWT_SECRET: test-jwt-secret-for-ci-32chars-long
+          JWT_REFRESH_SECRET: test-refresh-secret-for-ci-32chars-long
+          JWT_EXPIRES_IN: 1h
+          JWT_REFRESH_EXPIRES_IN: 7d
+          DEMO_MODE: "true"
+          DEMO_OTP: "123456"
+          PLATFORM_FEE_PERCENT: "15"
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Create release archive
+        run: |
+          tar -czf release.tar.gz \
+            dist \
+            package.json \
+            package-lock.json \
+            ecosystem.config.cjs \
+            .env.example
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${VPS_PORT}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload release archive
+        run: |
+          scp -i ~/.ssh/deploy_key -P "${VPS_PORT}" release.tar.gz \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/${APP_NAME}-${GITHUB_SHA}.tar.gz"
+
+      - name: Activate release on VPS
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${VPS_PORT}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "APP_NAME='${APP_NAME}' DEPLOY_PATH='${DEPLOY_PATH}' RELEASE='${GITHUB_SHA}' bash -s" <<'EOF'
+          set -euo pipefail
+
+          RELEASE_DIR="${DEPLOY_PATH}/releases/${RELEASE}"
+          SHARED_DIR="${DEPLOY_PATH}/shared"
+
+          mkdir -p "${RELEASE_DIR}" "${SHARED_DIR}/logs"
+          tar -xzf "/tmp/${APP_NAME}-${RELEASE}.tar.gz" -C "${RELEASE_DIR}"
+          rm -f "/tmp/${APP_NAME}-${RELEASE}.tar.gz"
+
+          if [ ! -f "${SHARED_DIR}/.env" ]; then
+            cp "${RELEASE_DIR}/.env.example" "${SHARED_DIR}/.env"
+            echo "Created ${SHARED_DIR}/.env from .env.example. Fill production values and rerun the deployment."
+            exit 1
+          fi
+
+          ln -sfn "${SHARED_DIR}/.env" "${RELEASE_DIR}/.env"
+          rm -rf "${RELEASE_DIR}/logs"
+          ln -sfn "${SHARED_DIR}/logs" "${RELEASE_DIR}/logs"
+
+          cd "${RELEASE_DIR}"
+          npm ci --omit=dev
+
+          ln -sfn "${RELEASE_DIR}" "${DEPLOY_PATH}/current"
+          cd "${DEPLOY_PATH}/current"
+
+          if command -v pm2 >/dev/null 2>&1; then
+            pm2 startOrReload ecosystem.config.cjs --env production
+            pm2 save
+          else
+            npm install -g pm2
+            pm2 start ecosystem.config.cjs --env production
+            pm2 save
+          fi
+
+          find "${DEPLOY_PATH}/releases" -mindepth 1 -maxdepth 1 -type d \
+            | sort -r \
+            | tail -n +6 \
+            | xargs -r rm -rf
+          EOF

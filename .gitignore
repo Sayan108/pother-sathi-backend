@@ -31,8 +31,7 @@ coverage/
 # Bower dependency directory (https://bower.io/)
 bower_components/
 
-# Lock files
-package-lock.json
+# Lock files from package managers this project does not use
 yarn.lock
 pnpm-lock.yaml
 

@@ -101,6 +101,12 @@ The server starts on `http://localhost:5000`.
 
 ---
 
+## Deployment
+
+GitHub Actions deployment for a Hostinger VPS is documented in [`docs/hostinger-vps-cicd.md`](./docs/hostinger-vps-cicd.md).
+
+---
+
 ## API Reference
 
 ### Auth
