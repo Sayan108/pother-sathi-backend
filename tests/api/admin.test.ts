@@ -10,6 +10,8 @@ import {
 } from "../setup/helpers";
 import { User } from "../../src/models/User";
 import { Driver } from "../../src/models/Driver";
+import { Ride } from "../../src/models/Ride";
+import { BasePrice } from "../../src/models/BasePrice";
 import { RechargeRequest } from "../../src/models/RechargeRequest";
 
 let app: Application;
@@ -167,6 +169,94 @@ describe("Admin recharge request approval", () => {
 });
 
 describe("Admin driver approvals and wallet control", () => {
+  it("should list rides for the admin dashboard", async () => {
+    const rider = await User.create({
+      phone: "9876543215",
+      countryCode: "+91",
+      role: "rider",
+      name: "Test Rider",
+      isVerified: true,
+      walletBalance: 100,
+    });
+
+    await Ride.create({
+      riderId: rider._id,
+      driverId,
+      pickup: { lat: 22.5726, lng: 88.3639, address: "Pickup" },
+      drop: { lat: 22.58, lng: 88.37, address: "Drop" },
+      vehicleType: "auto",
+      status: "completed",
+      fare: 120,
+      platformFee: 18,
+      driverEarning: 102,
+      discount: 0,
+      paymentMethod: "cash",
+      isPaid: true,
+      otp: "1234",
+    });
+
+    const res = await request(app)
+      .get("/api/admin/rides?page=1&limit=20")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.rides).toHaveLength(1);
+    expect(res.body.data.rides[0]).toMatchObject({
+      vehicleType: "auto",
+      status: "completed",
+      fare: 120,
+    });
+    expect(res.body.data.rides[0].riderId).toMatchObject({
+      phone: "9876543215",
+      name: "Test Rider",
+    });
+  });
+
+  it("should manage base prices for the admin dashboard", async () => {
+    const listRes = await request(app)
+      .get("/api/admin/base-prices")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.success).toBe(true);
+    expect(listRes.body.data.basePrices.length).toBeGreaterThan(0);
+
+    const createRes = await request(app)
+      .post("/api/admin/base-prices")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        vehicleType: "auto",
+        basePrice: 35,
+        pricePerKm: 16,
+        minimumFare: 75,
+        isActive: true,
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.data.basePrice).toMatchObject({
+      vehicleType: "auto",
+      basePrice: 35,
+      pricePerKm: 16,
+      minimumFare: 75,
+      isActive: true,
+    });
+
+    const updateRes = await request(app)
+      .put("/api/admin/base-prices/auto")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ basePrice: 40 });
+
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.body.data.basePrice).toMatchObject({
+      vehicleType: "auto",
+      basePrice: 40,
+    });
+
+    const saved = await BasePrice.findOne({ vehicleType: "auto" }).lean();
+    expect(saved?.basePrice).toBe(40);
+  });
+
   it("should list drivers for the admin dashboard", async () => {
     const res = await request(app)
       .get("/api/admin/drivers?page=1&limit=1")

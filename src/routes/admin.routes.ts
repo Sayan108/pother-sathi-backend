@@ -8,6 +8,11 @@ import {
   getDrivers,
   getRiders,
   getUnionLeaders,
+  getRides,
+  getBasePrices,
+  createBasePrice,
+  updateBasePrice,
+  deleteBasePrice,
   getPendingDrivers,
   getDriverKycDetails,
   verifyDriver,
@@ -34,6 +39,69 @@ router.get("/drivers/pending", getPendingDrivers);
 router.get("/drivers/kyc/pending", getPendingDrivers);
 router.get("/riders", getRiders);
 router.get("/leaders", getUnionLeaders);
+router.get("/rides", getRides);
+router.get("/base-prices", getBasePrices);
+router.get("/fares/base-prices", getBasePrices);
+router.post(
+  "/base-prices",
+  [
+    body("vehicleType")
+      .isIn(["bike", "auto", "toto", "car", "delivery"])
+      .withMessage("Invalid vehicle type"),
+    body("basePrice").isFloat({ min: 0 }).withMessage("Base price must be non-negative"),
+    body("pricePerKm").isFloat({ min: 0 }).withMessage("Price per km must be non-negative"),
+    body("minimumFare").isFloat({ min: 0 }).withMessage("Minimum fare must be non-negative"),
+    body("isActive").optional().isBoolean().withMessage("isActive must be boolean"),
+  ],
+  validateRequest,
+  createBasePrice,
+);
+router.post(
+  "/fares/base-prices",
+  [
+    body("vehicleType")
+      .isIn(["bike", "auto", "toto", "car", "delivery"])
+      .withMessage("Invalid vehicle type"),
+    body("basePrice").isFloat({ min: 0 }).withMessage("Base price must be non-negative"),
+    body("pricePerKm").isFloat({ min: 0 }).withMessage("Price per km must be non-negative"),
+    body("minimumFare").isFloat({ min: 0 }).withMessage("Minimum fare must be non-negative"),
+    body("isActive").optional().isBoolean().withMessage("isActive must be boolean"),
+  ],
+  validateRequest,
+  createBasePrice,
+);
+router.put(
+  "/base-prices/:id",
+  [
+    body("vehicleType")
+      .optional()
+      .isIn(["bike", "auto", "toto", "car", "delivery"])
+      .withMessage("Invalid vehicle type"),
+    body("basePrice").optional().isFloat({ min: 0 }).withMessage("Base price must be non-negative"),
+    body("pricePerKm").optional().isFloat({ min: 0 }).withMessage("Price per km must be non-negative"),
+    body("minimumFare").optional().isFloat({ min: 0 }).withMessage("Minimum fare must be non-negative"),
+    body("isActive").optional().isBoolean().withMessage("isActive must be boolean"),
+  ],
+  validateRequest,
+  updateBasePrice,
+);
+router.put(
+  "/fares/base-prices/:id",
+  [
+    body("vehicleType")
+      .optional()
+      .isIn(["bike", "auto", "toto", "car", "delivery"])
+      .withMessage("Invalid vehicle type"),
+    body("basePrice").optional().isFloat({ min: 0 }).withMessage("Base price must be non-negative"),
+    body("pricePerKm").optional().isFloat({ min: 0 }).withMessage("Price per km must be non-negative"),
+    body("minimumFare").optional().isFloat({ min: 0 }).withMessage("Minimum fare must be non-negative"),
+    body("isActive").optional().isBoolean().withMessage("isActive must be boolean"),
+  ],
+  validateRequest,
+  updateBasePrice,
+);
+router.delete("/base-prices/:id", deleteBasePrice);
+router.delete("/fares/base-prices/:id", deleteBasePrice);
 router.get("/drivers/:id/kyc", getDriverKycDetails);
 router.patch("/drivers/:id/verify", verifyDriver);
 router.patch("/drivers/:id/kyc/approve", verifyDriver);

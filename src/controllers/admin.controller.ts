@@ -2,6 +2,9 @@ import mongoose from "mongoose";
 import { Request, Response } from "express";
 import { User } from "../models/User";
 import { Driver } from "../models/Driver";
+import { Ride } from "../models/Ride";
+import { BasePrice } from "../models/BasePrice";
+import { VehicleType } from "../models/Driver";
 import { RechargeRequest } from "../models/RechargeRequest";
 import { Transaction } from "../models/Transaction";
 import { env } from "../config/environment";
@@ -39,6 +42,41 @@ function getPagination(req: Request, defaultLimit = 20, maxLimit = 100) {
     limit,
     skip: (page - 1) * limit,
   };
+}
+
+const DEFAULT_BASE_PRICES: Record<
+  VehicleType,
+  { basePrice: number; pricePerKm: number; minimumFare: number }
+> = {
+  bike: { basePrice: 20, pricePerKm: 8, minimumFare: 40 },
+  auto: { basePrice: 30, pricePerKm: 15, minimumFare: 70 },
+  toto: { basePrice: 25, pricePerKm: 12, minimumFare: 55 },
+  car: { basePrice: 40, pricePerKm: 20, minimumFare: 80 },
+  delivery: { basePrice: 25, pricePerKm: 10, minimumFare: 50 },
+};
+
+const VEHICLE_TYPES = Object.keys(DEFAULT_BASE_PRICES) as VehicleType[];
+
+function isVehicleType(value: unknown): value is VehicleType {
+  return typeof value === "string" && VEHICLE_TYPES.includes(value as VehicleType);
+}
+
+async function ensureDefaultBasePrices() {
+  await Promise.all(
+    VEHICLE_TYPES.map((vehicleType) =>
+      BasePrice.updateOne(
+        { vehicleType },
+        {
+          $setOnInsert: {
+            vehicleType,
+            ...DEFAULT_BASE_PRICES[vehicleType],
+            isActive: true,
+          },
+        },
+        { upsert: true },
+      ),
+    ),
+  );
 }
 
 export async function getRechargeRequests(
@@ -146,6 +184,121 @@ export async function getUnionLeaders(
     total,
     totalPages: Math.ceil(total / limit),
   });
+}
+
+export async function getRides(req: Request, res: Response): Promise<void> {
+  const { page, limit, skip } = getPagination(req);
+  const { status, vehicleType } = req.query;
+  const filter: Record<string, unknown> = {};
+
+  if (typeof status === "string" && status.trim()) {
+    filter.status = status.trim();
+  }
+  if (typeof vehicleType === "string" && vehicleType.trim()) {
+    filter.vehicleType = vehicleType.trim();
+  }
+
+  const [rides, total] = await Promise.all([
+    Ride.find(filter)
+      .populate("riderId", "name phone")
+      .populate("driverId", "name phone")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Ride.countDocuments(filter),
+  ]);
+
+  sendSuccess(res, "Rides fetched", { rides }, 200, {
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit),
+  });
+}
+
+export async function getBasePrices(
+  _req: Request,
+  res: Response,
+): Promise<void> {
+  await ensureDefaultBasePrices();
+  const basePrices = await BasePrice.find()
+    .sort({ vehicleType: 1 })
+    .lean();
+
+  sendSuccess(res, "Base prices fetched", { basePrices });
+}
+
+export async function createBasePrice(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { vehicleType, basePrice, pricePerKm, minimumFare, isActive } = req.body;
+
+  if (!isVehicleType(vehicleType)) {
+    sendError(res, "Invalid vehicle type", 400);
+    return;
+  }
+
+  const price = await BasePrice.findOneAndUpdate(
+    { vehicleType },
+    {
+      $set: {
+        basePrice,
+        pricePerKm,
+        minimumFare,
+        isActive: isActive === undefined ? true : isActive,
+      },
+    },
+    { new: true, upsert: true, runValidators: true },
+  ).lean();
+
+  sendSuccess(res, "Base price saved", { basePrice: price }, 201);
+}
+
+export async function updateBasePrice(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { id } = req.params;
+  const update: Record<string, unknown> = {};
+
+  ["basePrice", "pricePerKm", "minimumFare", "isActive"].forEach((key) => {
+    if (req.body[key] !== undefined) update[key] = req.body[key];
+  });
+  if (isVehicleType(req.body.vehicleType)) {
+    update.vehicleType = req.body.vehicleType;
+  }
+
+  const price = await BasePrice.findOneAndUpdate(
+    mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { vehicleType: id },
+    { $set: update },
+    { new: true, runValidators: true },
+  ).lean();
+
+  if (!price) {
+    sendNotFound(res, "Base price not found");
+    return;
+  }
+
+  sendSuccess(res, "Base price updated", { basePrice: price });
+}
+
+export async function deleteBasePrice(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { id } = req.params;
+  const price = await BasePrice.findOneAndDelete(
+    mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { vehicleType: id },
+  ).lean();
+
+  if (!price) {
+    sendNotFound(res, "Base price not found");
+    return;
+  }
+
+  sendSuccess(res, "Base price deleted", { basePrice: price });
 }
 
 export async function getPendingDrivers(

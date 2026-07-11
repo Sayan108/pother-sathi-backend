@@ -28,6 +28,7 @@ export interface IRide extends Document {
   _id: mongoose.Types.ObjectId;
   riderId: mongoose.Types.ObjectId;
   driverId?: mongoose.Types.ObjectId;
+  rejectedDriverIds?: mongoose.Types.ObjectId[];
 
   pickup: ICoordinate;
   drop: ICoordinate;
@@ -82,6 +83,7 @@ const rideSchema = new Schema<IRide>(
   {
     riderId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     driverId: { type: Schema.Types.ObjectId, ref: 'Driver' },
+    rejectedDriverIds: [{ type: Schema.Types.ObjectId, ref: 'Driver' }],
 
     pickup: { type: coordinateSchema, required: true },
     drop: { type: coordinateSchema, required: true },

@@ -34,6 +34,118 @@ function emitToRider(
   if (riderSocketId) io.to(riderSocketId).emit(event, payload);
 }
 
+async function emitRideRequestToDriver(
+  io: SocketServer,
+  ride: any,
+  driver: any,
+) {
+  const driverSocketId = driverSocketMap.get(driver._id.toString());
+  if (!driverSocketId) return false;
+
+  const rider = await User.findById(ride.riderId)
+    .select("name phone avatar rating")
+    .lean();
+  const rideRequestPayload = {
+    rideId: ride._id,
+    pickup: ride.pickup,
+    drop: ride.drop,
+    fare: ride.fare,
+    platformFee: ride.platformFee,
+    income: ride.driverEarning,
+    driverEarning: ride.driverEarning,
+    paymentMethod: ride.paymentMethod,
+    riderId: ride.riderId,
+    rider: rider
+      ? {
+          name: rider.name,
+          phone: rider.phone,
+          avatar: rider.avatar,
+          rating: rider.rating,
+        }
+      : undefined,
+    vehicleType: ride.vehicleType,
+    distance: ride.distance != null ? `${Number(ride.distance).toFixed(1)} km` : undefined,
+    distanceKm: ride.distance,
+    estimatedDuration: ride.duration,
+  };
+
+  io.to(driverSocketId).emit("ride:request", rideRequestPayload);
+  io.to(driverSocketId).emit("ride:assigned", rideRequestPayload);
+  io.to(driverSocketId).emit("pickup:route", {
+    rideId: ride._id,
+    pickup: ride.pickup,
+    driverLocation: driver.location?.coordinates,
+  });
+  io.to(driverSocketId).emit("destination:route", {
+    rideId: ride._id,
+    pickup: ride.pickup,
+    drop: ride.drop,
+  });
+  return true;
+}
+
+async function offerRideToNextDriver(
+  io: SocketServer,
+  rideId: string,
+  rejectedDriverId: string,
+) {
+  const ride = await Ride.findOne({
+    _id: rideId,
+    status: "requested",
+    driverId: rejectedDriverId,
+  });
+
+  if (!ride) return { success: false, error: "Ride is no longer available" };
+
+  const rejectedObjectId = new mongoose.Types.ObjectId(rejectedDriverId);
+  const alreadyRejected = (ride.rejectedDriverIds ?? []).some((id) =>
+    id.equals(rejectedObjectId),
+  );
+  if (!alreadyRejected) {
+    ride.rejectedDriverIds = [...(ride.rejectedDriverIds ?? []), rejectedObjectId];
+  }
+
+  const rejectedIds = (ride.rejectedDriverIds ?? []).map((id) => id.toString());
+  const liveDriverIds = Array.from(driverSocketMap.keys()).filter(
+    (driverId) => !rejectedIds.includes(driverId),
+  );
+
+  const candidates = await Driver.find({
+    _id: {
+      $in: liveDriverIds.map((id) => new mongoose.Types.ObjectId(id)),
+      $nin: ride.rejectedDriverIds ?? [],
+    },
+    vehicleType: ride.vehicleType,
+    $or: [{ accountStatus: "verified" }, { kycStatus: "approved" }],
+    isActive: true,
+    isOnline: true,
+    isAvailable: true,
+  });
+
+  for (const candidate of candidates) {
+    ride.driverId = candidate._id;
+    await ride.save();
+    const offered = await emitRideRequestToDriver(io, ride, candidate);
+    if (offered) {
+      return { success: true, reassigned: true };
+    }
+  }
+
+  ride.status = "no_driver" as any;
+  ride.driverId = undefined;
+  await ride.save();
+  emitToRider(io, ride.riderId, "ride:no_driver", {
+    rideId: ride._id,
+    reason: "All available drivers rejected the ride",
+  });
+  emitToRider(io, ride.riderId, "ride:driver_not_found", {
+    rideId: ride._id,
+    reason: "All available drivers rejected the ride",
+  });
+
+  return { success: true, noDriver: true };
+}
+
 export async function registerDriverSocketHandlers(
   io: SocketServer,
   socket: AuthenticatedSocket,
@@ -81,6 +193,7 @@ export async function registerDriverSocketHandlers(
       const { rideId } = data || {};
       const ride = await Ride.findOne({
         _id: rideId,
+        driverId,
         status: { $in: ["requested", "searching"] },
       });
       if (!ride) {
@@ -405,8 +518,15 @@ export async function registerDriverSocketHandlers(
   socket.on("driver:location:update", locationHandler);
   socket.on("driver:location_update", locationHandler);
 
-  socket.on("driver:reject_ride", (data: { rideId: string }) => {
-    logger.debug(`Driver ${driverId} rejected ride ${data.rideId}`);
+  socket.on("driver:reject_ride", async (data: { rideId: string }, cb?: Ack) => {
+    try {
+      logger.debug(`Driver ${driverId} rejected ride ${data.rideId}`);
+      const result = await offerRideToNextDriver(io, data.rideId, driverId);
+      cb?.(result);
+    } catch (err) {
+      logger.error("driver:reject_ride error:", err);
+      fail(cb, "Unable to reject ride");
+    }
   });
 
   socket.on("disconnect", async (reason) => {
