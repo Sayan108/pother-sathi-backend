@@ -12,10 +12,15 @@ import { sendSuccess, sendError, sendNotFound } from "../utils/response";
 import { DEFAULT_FARE_CONFIG } from "../services/fare.service";
 
 type AdminDriverListItem = {
+  aadhaarNumber?: string;
   aadhaarDocument?: string;
+  licenseNumber?: string;
+  licenseExpiry?: Date;
   licenseDocument?: string;
   selfieDocument?: string;
   vehicleDocument?: string;
+  kycStatus?: string;
+  kycRejectionReason?: string;
   [key: string]: unknown;
 };
 
@@ -27,6 +32,19 @@ function withKycDocuments<T extends AdminDriverListItem>(driver: T): T {
       licenseDocument: driver.licenseDocument,
       selfieDocument: driver.selfieDocument,
       vehicleDocument: driver.vehicleDocument,
+    },
+  };
+}
+
+function withKycDetails<T extends AdminDriverListItem>(driver: T): T {
+  return {
+    ...withKycDocuments(driver),
+    kycDetails: {
+      aadhaarNumber: driver.aadhaarNumber,
+      licenseNumber: driver.licenseNumber,
+      licenseExpiry: driver.licenseExpiry,
+      status: driver.kycStatus,
+      rejectionReason: driver.kycRejectionReason,
     },
   };
 }
@@ -332,7 +350,9 @@ export async function getDriverKycDetails(
     sendNotFound(res, "Driver not found");
     return;
   }
-  sendSuccess(res, "Driver KYC details fetched", { driver });
+  sendSuccess(res, "Driver KYC details fetched", {
+    driver: withKycDetails(driver),
+  });
 }
 
 export async function verifyDriver(req: Request, res: Response): Promise<void> {

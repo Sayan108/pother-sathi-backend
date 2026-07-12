@@ -2,7 +2,6 @@ import express, { Application } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
-import rateLimit from "express-rate-limit";
 import { env } from "./config/environment";
 import { corsOptions } from "./config/cors";
 import { logger } from "./utils/logger";
@@ -28,22 +27,6 @@ export function createApp(): Application {
 
   app.use(cors(corsOptions));
   app.options("*", cors(corsOptions));
-
-  // Global rate limiter (skip in test environment)
-  if (env.NODE_ENV !== "test") {
-    app.use(
-      rateLimit({
-        windowMs: 15 * 60 * 1000, // 15 minutes
-        max: 100,
-        standardHeaders: true,
-        legacyHeaders: false,
-        message: {
-          success: false,
-          message: "Too many requests. Please try again later.",
-        },
-      }),
-    );
-  }
 
   // ── Parsing ───────────────────────────────────────────────────────────────────
   app.use(express.json({ limit: "1mb" }));

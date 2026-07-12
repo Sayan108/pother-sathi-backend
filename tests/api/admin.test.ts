@@ -374,6 +374,55 @@ describe("Admin driver approvals and wallet control", () => {
     });
   });
 
+  it("should return full KYC details for a driver", async () => {
+    const pendingDriver = await Driver.create({
+      phone: "9876543214",
+      countryCode: "+91",
+      accountStatus: "pending",
+      kycStatus: "pending",
+      name: "KYC Detail Driver",
+      email: "kyc-detail@example.com",
+      vehicleType: "bike",
+      vehicleModel: "Honda Shine",
+      vehicleNumber: "WB12CD1234",
+      vehicleColor: "Black",
+      vehicleYear: "2024",
+      serviceArea: "Kolkata",
+      aadhaarNumber: "123456789013",
+      licenseNumber: "WB0120230001235",
+      aadhaarDocument: "https://example.com/detail-aadhaar.jpg",
+      licenseDocument: "https://example.com/detail-license.jpg",
+      selfieDocument: "https://example.com/detail-selfie.jpg",
+      vehicleDocument: "https://example.com/detail-vehicle.jpg",
+      licenseExpiry: new Date("2030-12-31"),
+      isActive: true,
+      walletBalance: 0,
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/drivers/${pendingDriver._id}/kyc`)
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.driver).toMatchObject({
+      name: "KYC Detail Driver",
+      aadhaarNumber: "123456789013",
+      licenseNumber: "WB0120230001235",
+      kycDocuments: {
+        aadhaarDocument: "https://example.com/detail-aadhaar.jpg",
+        licenseDocument: "https://example.com/detail-license.jpg",
+        selfieDocument: "https://example.com/detail-selfie.jpg",
+        vehicleDocument: "https://example.com/detail-vehicle.jpg",
+      },
+      kycDetails: {
+        aadhaarNumber: "123456789013",
+        licenseNumber: "WB0120230001235",
+        status: "pending",
+      },
+    });
+  });
+
   it("should verify a pending driver and credit verification bonus", async () => {
     const pendingDriver = await Driver.create({
       phone: "9876543217",
