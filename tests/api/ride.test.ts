@@ -154,6 +154,31 @@ describe("GET /api/rides/fare-estimate", () => {
     expect(res.body.data.totalFare).toBe(100);
   });
 
+  it("should prefer an existing DB base price over default config", async () => {
+    await BasePrice.create({
+      vehicleType: "auto",
+      basePrice: 120,
+      pricePerKm: 30,
+      minimumFare: 10,
+      isActive: false,
+    });
+
+    const res = await request(app)
+      .get("/api/rides/fare-estimate")
+      .set("Authorization", `Bearer ${riderToken}`)
+      .query({
+        pickupLat: 22.5726,
+        pickupLng: 88.3639,
+        dropLat: 22.5726,
+        dropLng: 88.3639,
+        vehicleType: "auto",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.baseFare).toBe(120);
+    expect(res.body.data.totalFare).toBe(120);
+  });
+
   it("should return 401 without token", async () => {
     const res = await request(app).get("/api/rides/fare-estimate").query({
       pickupLat: 22.5726,

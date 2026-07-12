@@ -16,33 +16,6 @@ export const DEFAULT_FARE_CONFIG: Record<VehicleType, FareConfig> = {
   delivery: { basePrice: 25, pricePerKm: 10, minimumFare: 50 },
 };
 
-// Backward-compatible maps for callers/tests that use the sync calculator.
-const FARE_PER_KM: Record<VehicleType, number> = {
-  bike: 8,
-  auto: 15,
-  toto: 12,
-  car: 20,
-  delivery: 10,
-};
-
-// Minimum fare
-const MIN_FARE: Record<VehicleType, number> = {
-  bike: 40,
-  auto: 70,
-  toto: 55,
-  car: 80,
-  delivery: 50,
-};
-
-// Base fare (pick-up charge)
-const BASE_FARE: Record<VehicleType, number> = {
-  bike: 20,
-  auto: 30,
-  toto: 25,
-  car: 40,
-  delivery: 25,
-};
-
 export interface FareBreakdown {
   baseFare: number;
   distanceFare: number;
@@ -72,11 +45,7 @@ export function calculateFare(
   couponCode?: string,
   fareConfig?: FareConfig,
 ): FareBreakdown {
-  const config = fareConfig || {
-    basePrice: BASE_FARE[vehicleType],
-    pricePerKm: FARE_PER_KM[vehicleType],
-    minimumFare: MIN_FARE[vehicleType],
-  };
+  const config = fareConfig || DEFAULT_FARE_CONFIG[vehicleType];
   const base = config.basePrice;
   const perKm = config.pricePerKm;
   const minFare = config.minimumFare;
@@ -115,8 +84,20 @@ export function calculateFare(
 }
 
 export async function getFareConfig(vehicleType: VehicleType): Promise<FareConfig> {
-  const price = await BasePrice.findOne({ vehicleType, isActive: true }).lean();
-  if (!price) return DEFAULT_FARE_CONFIG[vehicleType];
+  const defaultConfig = DEFAULT_FARE_CONFIG[vehicleType];
+  const price = await BasePrice.findOneAndUpdate(
+    { vehicleType },
+    {
+      $setOnInsert: {
+        vehicleType,
+        ...defaultConfig,
+        isActive: true,
+      },
+    },
+    { new: true, upsert: true, runValidators: true },
+  ).lean();
+
+  if (!price) return defaultConfig;
 
   return {
     basePrice: price.basePrice,

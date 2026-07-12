@@ -9,6 +9,7 @@ import { RechargeRequest } from "../models/RechargeRequest";
 import { Transaction } from "../models/Transaction";
 import { env } from "../config/environment";
 import { sendSuccess, sendError, sendNotFound } from "../utils/response";
+import { DEFAULT_FARE_CONFIG } from "../services/fare.service";
 
 type AdminDriverListItem = {
   aadhaarDocument?: string;
@@ -44,18 +45,7 @@ function getPagination(req: Request, defaultLimit = 20, maxLimit = 100) {
   };
 }
 
-const DEFAULT_BASE_PRICES: Record<
-  VehicleType,
-  { basePrice: number; pricePerKm: number; minimumFare: number }
-> = {
-  bike: { basePrice: 20, pricePerKm: 8, minimumFare: 40 },
-  auto: { basePrice: 30, pricePerKm: 15, minimumFare: 70 },
-  toto: { basePrice: 25, pricePerKm: 12, minimumFare: 55 },
-  car: { basePrice: 40, pricePerKm: 20, minimumFare: 80 },
-  delivery: { basePrice: 25, pricePerKm: 10, minimumFare: 50 },
-};
-
-const VEHICLE_TYPES = Object.keys(DEFAULT_BASE_PRICES) as VehicleType[];
+const VEHICLE_TYPES = Object.keys(DEFAULT_FARE_CONFIG) as VehicleType[];
 
 function isVehicleType(value: unknown): value is VehicleType {
   return typeof value === "string" && VEHICLE_TYPES.includes(value as VehicleType);
@@ -69,7 +59,7 @@ async function ensureDefaultBasePrices() {
         {
           $setOnInsert: {
             vehicleType,
-            ...DEFAULT_BASE_PRICES[vehicleType],
+            ...DEFAULT_FARE_CONFIG[vehicleType],
             isActive: true,
           },
         },
