@@ -545,7 +545,7 @@ export async function registerDriverSocketHandlers(
     if (driverSocketMap.get(driverId) === socket.id) {
       driverSocketMap.delete(driverId);
       await Driver.findByIdAndUpdate(driverId, {
-        $set: { isOnline: false, isAvailable: false, socketId: null },
+        $set: { socketId: null },
       });
     }
   });
