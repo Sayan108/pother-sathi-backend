@@ -7,7 +7,9 @@ export type DriverStatus =
   | "approved"
   | "verified"
   | "rejected"
-  | "suspended";
+  | "suspended"
+  | "banned"
+  | "active";
 export type KycStatus = "not_submitted" | "pending" | "rejected" | "approved";
 
 export interface IDriver extends Document {
@@ -55,6 +57,10 @@ export interface IDriver extends Document {
   accountStatus: DriverStatus;
   kycStatus: KycStatus;
   kycRejectionReason?: string;
+  isBanned: boolean;
+  isDeleted: boolean;
+  deletedAt?: Date;
+  deletedBy?: mongoose.Types.ObjectId;
   isOnline: boolean;
   isAvailable: boolean;
   currentRideId?: mongoose.Types.ObjectId;
@@ -163,6 +169,8 @@ const driverSchema = new Schema<IDriver>(
         "verified",
         "rejected",
         "suspended",
+        "banned",
+        "active",
       ],
       default: "incomplete",
     },
@@ -172,6 +180,10 @@ const driverSchema = new Schema<IDriver>(
       default: "not_submitted",
     },
     kycRejectionReason: { type: String },
+    isBanned: { type: Boolean, default: false },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
+    deletedBy: { type: Schema.Types.ObjectId, ref: "User" },
     isOnline: { type: Boolean, default: false },
     isAvailable: { type: Boolean, default: false },
     currentRideId: { type: Schema.Types.ObjectId, ref: "Ride" },
@@ -211,7 +223,7 @@ driverSchema.index({ kycStatus: 1, createdAt: -1 });
 
 driverSchema.pre("validate", function (next) {
   if (this.isModified("accountStatus") && !this.isModified("kycStatus")) {
-    if (this.accountStatus === "verified" || this.accountStatus === "approved")
+    if (this.accountStatus === "verified" || this.accountStatus === "approved" || this.accountStatus === "active")
       this.kycStatus = "approved";
     else if (this.accountStatus === "pending") this.kycStatus = "pending";
     else if (this.accountStatus === "rejected") this.kycStatus = "rejected";

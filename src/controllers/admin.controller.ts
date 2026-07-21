@@ -118,7 +118,7 @@ export async function getRechargeRequests(
 export async function getDrivers(req: Request, res: Response): Promise<void> {
   const { page, limit, skip } = getPagination(req);
   const status = req.query.status as string | undefined;
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { isDeleted: { $ne: true } };
   if (status) {
     filter.$or = [{ accountStatus: status }, { kycStatus: status }];
   }
@@ -149,7 +149,7 @@ export async function getRiders(req: Request, res: Response): Promise<void> {
   const { page, limit, skip } = getPagination(req);
 
   const [riders, total] = await Promise.all([
-    User.find({ role: "rider" })
+    User.find({ role: "rider", isDeleted: { $ne: true } })
       .select(
         "phone countryCode role name email avatar dob gender rating totalRatings totalRides walletBalance isActive isVerified createdAt updatedAt",
       )
@@ -157,7 +157,7 @@ export async function getRiders(req: Request, res: Response): Promise<void> {
       .skip(skip)
       .limit(limit)
       .lean(),
-    User.countDocuments({ role: "rider" }),
+    User.countDocuments({ role: "rider", isDeleted: { $ne: true } }),
   ]);
 
   sendSuccess(res, "Riders fetched", { riders }, 200, {
@@ -175,7 +175,7 @@ export async function getUnionLeaders(
   const { page, limit, skip } = getPagination(req);
 
   const [leaders, total] = await Promise.all([
-    Driver.find({ isUnionLeader: true })
+    Driver.find({ isUnionLeader: true, isDeleted: { $ne: true } })
       .select(
         "phone countryCode name email vehicleType vehicleModel vehicleNumber accountStatus kycStatus walletBalance totalEarnings rating totalRatings totalRides isUnionLeader referralCode referralCount isActive isVerified createdAt updatedAt",
       )
@@ -183,7 +183,7 @@ export async function getUnionLeaders(
       .skip(skip)
       .limit(limit)
       .lean(),
-    Driver.countDocuments({ isUnionLeader: true }),
+    Driver.countDocuments({ isUnionLeader: true, isDeleted: { $ne: true } }),
   ]);
 
   sendSuccess(res, "Union leaders fetched", { leaders }, 200, {
@@ -316,7 +316,10 @@ export async function getPendingDrivers(
   const { page, limit, skip } = getPagination(req);
 
   const [drivers, total] = await Promise.all([
-    Driver.find({ $or: [{ accountStatus: "pending" }, { kycStatus: "pending" }] })
+    Driver.find({
+      isDeleted: { $ne: true },
+      $or: [{ accountStatus: "pending" }, { kycStatus: "pending" }],
+    })
       .select(
         "phone countryCode name email dob gender vehicleType vehicleModel vehicleNumber vehicleColor vehicleYear serviceArea accountStatus kycStatus kycRejectionReason walletBalance aadhaarNumber licenseNumber aadhaarDocument licenseDocument selfieDocument vehicleDocument licenseExpiry createdAt updatedAt",
       )
@@ -324,7 +327,10 @@ export async function getPendingDrivers(
       .skip(skip)
       .limit(limit)
       .lean(),
-    Driver.countDocuments({ $or: [{ accountStatus: "pending" }, { kycStatus: "pending" }] }),
+    Driver.countDocuments({
+      isDeleted: { $ne: true },
+      $or: [{ accountStatus: "pending" }, { kycStatus: "pending" }],
+    }),
   ]);
 
   sendSuccess(res, "Pending driver approvals fetched", {
@@ -353,6 +359,113 @@ export async function getDriverKycDetails(
   sendSuccess(res, "Driver KYC details fetched", {
     driver: withKycDetails(driver),
   });
+}
+
+function resolveBanState(body: Record<string, unknown>): {
+  isBanned: boolean;
+  accountStatus: "active" | "banned";
+  reason?: string;
+} {
+  const action = typeof body.action === "string" ? body.action : undefined;
+  const banned =
+    action === "ban" ||
+    body.banned === true ||
+    body.isBanned === true ||
+    body.blocked === true ||
+    body.accountStatus === "banned" ||
+    body.status === "banned";
+
+  return {
+    isBanned: Boolean(banned),
+    accountStatus: banned ? "banned" : "active",
+    reason:
+      typeof body.reason === "string"
+        ? body.reason
+        : typeof body.rejectionReason === "string"
+          ? body.rejectionReason
+          : undefined,
+  };
+}
+
+export async function updateDriverAccount(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const driver = await Driver.findById(req.params.id);
+  if (!driver) {
+    sendNotFound(res, "Driver not found");
+    return;
+  }
+
+  const update = resolveBanState(req.body as Record<string, unknown>);
+  driver.isBanned = update.isBanned;
+  driver.accountStatus = update.accountStatus;
+  driver.isActive = update.accountStatus !== "banned";
+  if (update.reason) {
+    driver.kycRejectionReason = update.reason;
+  }
+  await driver.save();
+
+  sendSuccess(res, "Driver account updated", { user: driver });
+}
+
+export async function updateRiderAccount(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const rider = await User.findById(req.params.id);
+  if (!rider) {
+    sendNotFound(res, "Rider not found");
+    return;
+  }
+
+  const update = resolveBanState(req.body as Record<string, unknown>);
+  rider.isBanned = update.isBanned;
+  rider.accountStatus = update.accountStatus;
+  rider.isActive = update.accountStatus !== "banned";
+  await rider.save();
+
+  sendSuccess(res, "Rider account updated", { user: rider });
+}
+
+export async function deleteDriverAccount(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const driver = await Driver.findById(req.params.id);
+  if (!driver) {
+    sendNotFound(res, "Driver not found");
+    return;
+  }
+
+  driver.isDeleted = true;
+  driver.deletedAt = new Date();
+  driver.deletedBy = new mongoose.Types.ObjectId(req.user!.id);
+  driver.isActive = false;
+  driver.accountStatus = "banned";
+  await driver.save();
+
+  sendSuccess(res, "Driver account deleted", { user: driver });
+}
+
+export async function deleteRiderAccount(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const rider = await User.findById(req.params.id);
+  if (!rider) {
+    sendNotFound(res, "Rider not found");
+    return;
+  }
+
+  rider.isDeleted = true;
+  rider.deletedAt = new Date();
+  rider.deletedBy = new mongoose.Types.ObjectId(req.user!.id);
+  rider.isActive = false;
+  rider.accountStatus = "banned";
+  await rider.save();
+
+  sendSuccess(res, "Rider account deleted", { user: rider });
 }
 
 export async function verifyDriver(req: Request, res: Response): Promise<void> {

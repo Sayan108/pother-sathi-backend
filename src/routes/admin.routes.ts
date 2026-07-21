@@ -18,6 +18,10 @@ import {
   verifyDriver,
   rejectDriver,
   adjustDriverWallet,
+  updateDriverAccount,
+  updateRiderAccount,
+  deleteDriverAccount,
+  deleteRiderAccount,
 } from "../controllers/admin.controller";
 import { authenticate, requireAdmin } from "../middleware/auth.middleware";
 
@@ -107,6 +111,12 @@ router.patch("/drivers/:id/verify", verifyDriver);
 router.patch("/drivers/:id/kyc/approve", verifyDriver);
 router.patch("/drivers/:id/reject", rejectDriver);
 router.patch("/drivers/:id/kyc/reject", rejectDriver);
+router.patch("/drivers/:id", updateDriverAccount);
+router.put("/drivers/:id", updateDriverAccount);
+router.delete("/drivers/:id", deleteDriverAccount);
+router.patch("/riders/:id", updateRiderAccount);
+router.put("/riders/:id", updateRiderAccount);
+router.delete("/riders/:id", deleteRiderAccount);
 router.patch(
   "/drivers/:id/wallet",
   [

@@ -464,4 +464,72 @@ describe("Admin driver approvals and wallet control", () => {
     expect(adjustRes.body.success).toBe(true);
     expect(adjustRes.body.data.walletBalance).toBe(700);
   });
+
+  it("should ban and unban a driver through the admin update endpoint", async () => {
+    const banRes = await request(app)
+      .patch(`/api/admin/drivers/${driverId}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        action: "ban",
+        banned: true,
+        isBanned: true,
+        blocked: true,
+        accountStatus: "banned",
+        status: "banned",
+        reason: "Banned by admin",
+      });
+
+    expect(banRes.status).toBe(200);
+    expect(banRes.body.success).toBe(true);
+    expect(banRes.body.data.user.isBanned).toBe(true);
+    expect(banRes.body.data.user.accountStatus).toBe("banned");
+
+    const unbanRes = await request(app)
+      .put(`/api/admin/drivers/${driverId}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        action: "unban",
+        banned: false,
+        isBanned: false,
+        blocked: false,
+        accountStatus: "active",
+        status: "active",
+        reason: "Unbanned by admin",
+      });
+
+    expect(unbanRes.status).toBe(200);
+    expect(unbanRes.body.success).toBe(true);
+    expect(unbanRes.body.data.user.isBanned).toBe(false);
+    expect(unbanRes.body.data.user.accountStatus).toBe("active");
+  });
+
+  it("should soft delete a rider through the admin delete endpoint", async () => {
+    const rider = await User.create({
+      phone: "9876543210",
+      countryCode: "+91",
+      role: "rider",
+      name: "Delete Me",
+      isVerified: true,
+      isActive: true,
+    });
+
+    const deleteRes = await request(app)
+      .delete(`/api/admin/riders/${rider._id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send();
+
+    expect(deleteRes.status).toBe(200);
+    expect(deleteRes.body.success).toBe(true);
+
+    const deletedRider = await User.findById(rider._id).lean();
+    expect(deletedRider?.isDeleted).toBe(true);
+    expect(deletedRider?.deletedAt).toBeDefined();
+
+    const listRes = await request(app)
+      .get("/api/admin/riders?page=1&limit=20")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.data.riders).toHaveLength(0);
+  });
 });

@@ -24,6 +24,11 @@ export interface IUser extends Document {
   totalRatings: number;
   totalRides: number;
   walletBalance: number;
+  accountStatus: "active" | "banned";
+  isBanned: boolean;
+  isDeleted: boolean;
+  deletedAt?: Date;
+  deletedBy?: mongoose.Types.ObjectId;
   isActive: boolean;
   isVerified: boolean;
   fcmToken?: string;
@@ -88,6 +93,15 @@ const userSchema = new Schema<IUser>(
     totalRatings: { type: Number, default: 0 },
     totalRides: { type: Number, default: 0 },
     walletBalance: { type: Number, default: 0, min: 0 },
+    accountStatus: {
+      type: String,
+      enum: ["active", "banned"],
+      default: "active",
+    },
+    isBanned: { type: Boolean, default: false },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
+    deletedBy: { type: Schema.Types.ObjectId, ref: "User" },
     isActive: { type: Boolean, default: true },
     isVerified: { type: Boolean, default: false },
     fcmToken: { type: String },

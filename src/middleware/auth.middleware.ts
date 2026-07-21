@@ -51,8 +51,8 @@ export async function requireRider(
     return;
   }
   // Verify user still exists and is active
-  const user = await User.findById(req.user.id).select("isActive").lean();
-  if (!user || !user.isActive) {
+  const user = await User.findById(req.user.id).select("isActive accountStatus isDeleted").lean();
+  if (!user || !user.isActive || user.isDeleted || user.accountStatus === "banned") {
     sendForbidden(res, "Account is inactive or deleted");
     return;
   }
@@ -74,7 +74,7 @@ export async function requireDriver(
   const driver = await Driver.findById(req.user.id)
     .select("isActive accountStatus")
     .lean();
-  if (!driver || !driver.isActive) {
+  if (!driver || !driver.isActive || driver.accountStatus === "banned") {
     sendForbidden(res, "Account is inactive or deleted");
     return;
   }
@@ -98,7 +98,7 @@ export function isDriverKycApproved(driver: {
 
 export async function loadApprovedDriver(driverId: string) {
   const driver = await Driver.findById(driverId);
-  if (!driver || !driver.isActive || driver.accountStatus === "suspended") {
+  if (!driver || !driver.isActive || driver.accountStatus === "suspended" || driver.accountStatus === "banned") {
     return null;
   }
   return isDriverKycApproved(driver) ? driver : null;
@@ -119,7 +119,7 @@ export async function requireVerifiedDriver(
   const driver = await Driver.findById(req.user.id)
     .select("isActive accountStatus")
     .lean();
-  if (!driver || !driver.isActive) {
+  if (!driver || !driver.isActive || driver.accountStatus === "banned") {
     sendForbidden(res, "Account is inactive or deleted");
     return;
   }
