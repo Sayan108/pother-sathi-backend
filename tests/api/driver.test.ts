@@ -594,6 +594,9 @@ describe("PUT /api/driver/fcm-token", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+    const driver = await Driver.findById(verifiedDriverId).lean();
+    expect(driver?.fcmToken).toBe("driver-fcm-token-xyz");
+    expect(driver?.fcmTokens).toContain("driver-fcm-token-xyz");
     console.log(
       `[PUT /api/driver/fcm-token] status=${res.status} time=${time}ms`,
     );

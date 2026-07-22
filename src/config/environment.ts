@@ -76,6 +76,12 @@ export const env = {
   // Admin account creation
   ADMIN_CREATION_KEY: process.env.ADMIN_CREATION_KEY || "",
 
+  // Firebase Cloud Messaging fallback for offline app users.
+  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || "",
+  FIREBASE_USE_ADC: process.env.FIREBASE_USE_ADC !== "false",
+  FIREBASE_SERVICE_ACCOUNT_JSON:
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "",
+
   // Development helpers
   DEV_SEED_ACTIVE_DRIVERS:
     process.env.DEV_SEED_ACTIVE_DRIVERS === "true" ||

@@ -14,6 +14,7 @@ import riderRoutes from "./routes/rider.routes";
 import driverRoutes from "./routes/driver.routes";
 import rideRoutes from "./routes/ride.routes";
 import adminRoutes from "./routes/admin.routes";
+import bannerRoutes from "./routes/banner.routes";
 
 export function createApp(): Application {
   const app = express();
@@ -67,6 +68,7 @@ export function createApp(): Application {
   app.use("/api/rider", riderRoutes);
   app.use("/api/driver", driverRoutes);
   app.use("/api/admin", adminRoutes);
+  app.use("/api/banners", bannerRoutes);
   app.use("/api/rides", rideRoutes);
 
   // ── 404 & Error Handling ──────────────────────────────────────────────────────

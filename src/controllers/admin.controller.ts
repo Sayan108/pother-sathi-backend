@@ -4,12 +4,15 @@ import { User } from "../models/User";
 import { Driver } from "../models/Driver";
 import { Ride } from "../models/Ride";
 import { BasePrice } from "../models/BasePrice";
+import { Banner } from "../models/Banner";
 import { VehicleType } from "../models/Driver";
 import { RechargeRequest } from "../models/RechargeRequest";
 import { Transaction } from "../models/Transaction";
 import { env } from "../config/environment";
 import { sendSuccess, sendError, sendNotFound } from "../utils/response";
 import { DEFAULT_FARE_CONFIG } from "../services/fare.service";
+import { getIO } from "../config/socket";
+import { sendPushToTokens } from "../services/push-notification.service";
 
 type AdminDriverListItem = {
   aadhaarNumber?: string;
@@ -64,9 +67,12 @@ function getPagination(req: Request, defaultLimit = 20, maxLimit = 100) {
 }
 
 const VEHICLE_TYPES = Object.keys(DEFAULT_FARE_CONFIG) as VehicleType[];
+const MAX_USER_BANNERS = 10;
 
 function isVehicleType(value: unknown): value is VehicleType {
-  return typeof value === "string" && VEHICLE_TYPES.includes(value as VehicleType);
+  return (
+    typeof value === "string" && VEHICLE_TYPES.includes(value as VehicleType)
+  );
 }
 
 async function ensureDefaultBasePrices() {
@@ -85,6 +91,428 @@ async function ensureDefaultBasePrices() {
       ),
     ),
   );
+}
+
+function getStoredTokens(user: { fcmToken?: string; fcmTokens?: string[] }) {
+  return [
+    ...(Array.isArray(user.fcmTokens) ? user.fcmTokens : []),
+    user.fcmToken,
+  ].filter((token): token is string => Boolean(token));
+}
+
+async function removeInvalidTokens(tokens: string[]) {
+  if (tokens.length === 0) return;
+
+  await Promise.all([
+    User.updateMany({}, { $pull: { fcmTokens: { $in: tokens } } }),
+    User.updateMany({ fcmToken: { $in: tokens } }, { $unset: { fcmToken: "" } }),
+    Driver.updateMany({}, { $pull: { fcmTokens: { $in: tokens } } }),
+    Driver.updateMany({ fcmToken: { $in: tokens } }, { $unset: { fcmToken: "" } }),
+  ]);
+}
+
+async function resolveNotificationRecipients(
+  recipientType: string,
+  recipientId?: string,
+) {
+  if (recipientType === "rider") {
+    if (!recipientId || !mongoose.Types.ObjectId.isValid(recipientId)) {
+      return { error: "A valid rider recipientId is required" };
+    }
+    const rider = await User.findOne({
+      _id: recipientId,
+      role: "rider",
+      isDeleted: { $ne: true },
+    })
+      .select("name phone fcmToken fcmTokens")
+      .lean();
+    if (!rider) return { error: "Rider not found", notFound: true };
+    return {
+      recipients: [{ ...rider, role: "rider" as const }],
+      rooms: [`rider:${rider._id.toString()}`],
+    };
+  }
+
+  if (recipientType === "driver") {
+    if (!recipientId || !mongoose.Types.ObjectId.isValid(recipientId)) {
+      return { error: "A valid driver recipientId is required" };
+    }
+    const driver = await Driver.findOne({
+      _id: recipientId,
+      isDeleted: { $ne: true },
+    })
+      .select("name phone fcmToken fcmTokens")
+      .lean();
+    if (!driver) return { error: "Driver not found", notFound: true };
+    return {
+      recipients: [{ ...driver, role: "driver" as const }],
+      rooms: [`driver:${driver._id.toString()}`],
+    };
+  }
+
+  if (recipientType === "all_riders") {
+    const riders = await User.find({
+      role: "rider",
+      isDeleted: { $ne: true },
+    })
+      .select("name phone fcmToken fcmTokens")
+      .lean();
+    return {
+      recipients: riders.map((rider) => ({ ...rider, role: "rider" as const })),
+      rooms: ["riders"],
+    };
+  }
+
+  if (recipientType === "all_drivers") {
+    const drivers = await Driver.find({
+      isDeleted: { $ne: true },
+    })
+      .select("name phone fcmToken fcmTokens")
+      .lean();
+    return {
+      recipients: drivers.map((driver) => ({ ...driver, role: "driver" as const })),
+      rooms: ["drivers"],
+    };
+  }
+
+  if (recipientType === "all") {
+    const [riders, drivers] = await Promise.all([
+      User.find({
+        role: "rider",
+        isDeleted: { $ne: true },
+      })
+        .select("name phone fcmToken fcmTokens")
+        .lean(),
+      Driver.find({
+        isDeleted: { $ne: true },
+      })
+        .select("name phone fcmToken fcmTokens")
+        .lean(),
+    ]);
+    return {
+      recipients: [
+        ...riders.map((rider) => ({ ...rider, role: "rider" as const })),
+        ...drivers.map((driver) => ({ ...driver, role: "driver" as const })),
+      ],
+      rooms: ["riders", "drivers"],
+    };
+  }
+
+  return { error: "Invalid recipientType" };
+}
+
+export async function sendNotification(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { title, body, recipientType, recipientId, data } = req.body as {
+    title: string;
+    body: string;
+    recipientType: "rider" | "driver" | "all_riders" | "all_drivers" | "all";
+    recipientId?: string;
+    data?: Record<string, unknown>;
+  };
+
+  const resolved = await resolveNotificationRecipients(
+    recipientType,
+    recipientId,
+  );
+  if (resolved.error) {
+    if (resolved.notFound) sendNotFound(res, resolved.error);
+    else sendError(res, resolved.error, 400);
+    return;
+  }
+
+  const stringData = Object.fromEntries(
+    Object.entries(data ?? {}).map(([key, value]) => [key, String(value)]),
+  );
+
+  const payload = {
+    title,
+    body,
+    data: {
+      type: "admin_notification",
+      ...stringData,
+    },
+    sentAt: new Date().toISOString(),
+  };
+
+  let onlineCount = 0;
+  let onlineRecipientIds = new Set<string>();
+  let fcmResult = {
+    configured: false,
+    requested: 0,
+    successCount: 0,
+    failureCount: 0,
+    invalidTokens: [] as string[],
+  };
+
+  try {
+    const io = getIO();
+    const rooms = resolved.rooms ?? [];
+    const sockets = await io.in(rooms).fetchSockets();
+    onlineCount = sockets.length;
+    onlineRecipientIds = new Set(
+      sockets
+        .map((socket) => (socket as any).userId)
+        .filter((id): id is string => Boolean(id)),
+    );
+
+    rooms.forEach((room) => {
+      io.to(room).emit("admin:notification", payload);
+    });
+  } catch {
+    onlineCount = 0;
+  }
+
+  const offlineTokens = (resolved.recipients ?? [])
+    .filter((recipient: any) => !onlineRecipientIds.has(recipient._id.toString()))
+    .flatMap((recipient: any) => getStoredTokens(recipient));
+
+  fcmResult = await sendPushToTokens(offlineTokens, {
+    title,
+    body,
+    data: payload.data,
+  });
+  await removeInvalidTokens(fcmResult.invalidTokens);
+
+  sendSuccess(res, "Notification processed", {
+    recipientCount: resolved.recipients?.length ?? 0,
+    onlineCount,
+    socketDeliveredCount: onlineCount,
+    fcmConfigured: fcmResult.configured,
+    fcmTokenCount: fcmResult.requested,
+    fcmSuccessCount: fcmResult.successCount,
+    fcmFailureCount: fcmResult.failureCount,
+    deliveredCount: onlineCount + fcmResult.successCount,
+    event: "admin:notification",
+  });
+}
+
+function normalizeBannerStatus(body: Record<string, unknown>) {
+  const explicitStatus =
+    typeof body.status === "string" ? body.status.toLowerCase() : undefined;
+  const isActive =
+    typeof body.isActive === "boolean"
+      ? body.isActive
+      : typeof body.active === "boolean"
+        ? body.active
+        : undefined;
+
+  if (explicitStatus === "inactive" || explicitStatus === "paused") {
+    return "inactive" as const;
+  }
+  if (explicitStatus === "active") {
+    return "active" as const;
+  }
+  if (isActive !== undefined) {
+    return isActive ? ("active" as const) : ("inactive" as const);
+  }
+  return "active" as const;
+}
+
+function normalizeBannerUrl(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isCloudinaryUrl(value: string) {
+  return /^https?:\/\/res\.cloudinary\.com\//i.test(value);
+}
+
+function getBannerQuery(req: Request) {
+  const audience = req.query.audience === "driver" ? "driver" : "user";
+  const includeDeleted = req.query.includeDeleted === "true";
+  const filter: Record<string, unknown> = { audience };
+
+  if (!includeDeleted) {
+    filter.isDeleted = { $ne: true };
+  }
+
+  return filter;
+}
+
+export async function getBanners(req: Request, res: Response): Promise<void> {
+  const filter = getBannerQuery(req);
+  const banners = await Banner.find(filter)
+    .sort({ sortOrder: 1, createdAt: -1 })
+    .lean();
+
+  sendSuccess(res, "Banners fetched", { banners });
+}
+
+export async function createBanner(req: Request, res: Response): Promise<void> {
+  const body = req.body as Record<string, unknown>;
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const imageUrl = normalizeBannerUrl(
+    body.imageUrl || body.bannerUrl || body.image || body.url,
+  );
+  const linkUrl = normalizeBannerUrl(
+    body.linkUrl || body.redirectUrl || body.targetUrl,
+  );
+  const audience = body.audience === "driver" ? "driver" : "user";
+
+  if (!title) {
+    sendError(res, "Banner title is required", 400);
+    return;
+  }
+
+  if (!imageUrl || !isHttpUrl(imageUrl)) {
+    sendError(res, "A valid banner image URL is required", 400);
+    return;
+  }
+
+  if (!isCloudinaryUrl(imageUrl)) {
+    sendError(res, "Banner image must be a Cloudinary URL", 400);
+    return;
+  }
+
+  if (linkUrl && !isHttpUrl(linkUrl)) {
+    sendError(res, "Banner link URL must be a valid http(s) URL", 400);
+    return;
+  }
+
+  if (audience === "user") {
+    const totalUserBanners = await Banner.countDocuments({
+      audience: "user",
+      isDeleted: { $ne: true },
+    });
+    if (totalUserBanners >= MAX_USER_BANNERS) {
+      sendError(res, `Only ${MAX_USER_BANNERS} user banners are allowed`, 400);
+      return;
+    }
+  }
+
+  const banner = await Banner.create({
+    title,
+    imageUrl,
+    linkUrl: linkUrl || undefined,
+    audience,
+    status: normalizeBannerStatus(body),
+    sortOrder:
+      typeof body.sortOrder === "number"
+        ? body.sortOrder
+        : Number(body.sortOrder || 0),
+    createdBy: new mongoose.Types.ObjectId(req.user!.id),
+    updatedBy: new mongoose.Types.ObjectId(req.user!.id),
+  });
+
+  sendSuccess(res, "Banner created", { banner }, 201);
+}
+
+export async function updateBanner(req: Request, res: Response): Promise<void> {
+  const body = req.body as Record<string, unknown>;
+  const update: Record<string, unknown> = {
+    updatedBy: new mongoose.Types.ObjectId(req.user!.id),
+  };
+
+  if (typeof body.title === "string") {
+    const title = body.title.trim();
+    if (!title) {
+      sendError(res, "Banner title cannot be empty", 400);
+      return;
+    }
+    update.title = title;
+  }
+
+  if (
+    body.status !== undefined ||
+    body.isActive !== undefined ||
+    body.active !== undefined
+  ) {
+    const status = normalizeBannerStatus(body);
+    update.status = status;
+    update.isActive = status === "active";
+  }
+
+  if (
+    body.imageUrl !== undefined ||
+    body.bannerUrl !== undefined ||
+    body.image !== undefined ||
+    body.url !== undefined
+  ) {
+    const imageUrl = normalizeBannerUrl(
+      body.imageUrl || body.bannerUrl || body.image || body.url,
+    );
+    if (!imageUrl || !isHttpUrl(imageUrl)) {
+      sendError(res, "A valid banner image URL is required", 400);
+      return;
+    }
+    if (!isCloudinaryUrl(imageUrl)) {
+      sendError(res, "Banner image must be a Cloudinary URL", 400);
+      return;
+    }
+    update.imageUrl = imageUrl;
+  }
+
+  if (
+    body.linkUrl !== undefined ||
+    body.redirectUrl !== undefined ||
+    body.targetUrl !== undefined
+  ) {
+    const linkUrl = normalizeBannerUrl(
+      body.linkUrl || body.redirectUrl || body.targetUrl,
+    );
+    if (linkUrl && !isHttpUrl(linkUrl)) {
+      sendError(res, "Banner link URL must be a valid http(s) URL", 400);
+      return;
+    }
+    update.linkUrl = linkUrl || undefined;
+  }
+
+  if (body.sortOrder !== undefined) {
+    const sortOrder = Number(body.sortOrder);
+    if (Number.isNaN(sortOrder) || sortOrder < 0) {
+      sendError(res, "sortOrder must be a non-negative number", 400);
+      return;
+    }
+    update.sortOrder = sortOrder;
+  }
+
+  const banner = await Banner.findOneAndUpdate(
+    { _id: req.params.id, isDeleted: { $ne: true } },
+    { $set: update },
+    { new: true, runValidators: true },
+  ).lean();
+
+  if (!banner) {
+    sendNotFound(res, "Banner not found");
+    return;
+  }
+
+  sendSuccess(res, "Banner updated", { banner });
+}
+
+export async function deleteBanner(req: Request, res: Response): Promise<void> {
+  const banner = await Banner.findOneAndUpdate(
+    { _id: req.params.id, isDeleted: { $ne: true } },
+    {
+      $set: {
+        isDeleted: true,
+        isActive: false,
+        status: "inactive",
+        deletedAt: new Date(),
+        deletedBy: new mongoose.Types.ObjectId(req.user!.id),
+        updatedBy: new mongoose.Types.ObjectId(req.user!.id),
+      },
+    },
+    { new: true },
+  ).lean();
+
+  if (!banner) {
+    sendNotFound(res, "Banner not found");
+    return;
+  }
+
+  sendSuccess(res, "Banner deleted", { banner });
 }
 
 export async function getRechargeRequests(
@@ -135,14 +563,20 @@ export async function getDrivers(req: Request, res: Response): Promise<void> {
     Driver.countDocuments(filter),
   ]);
 
-  sendSuccess(res, "Drivers fetched", {
-    drivers: drivers.map(withKycDocuments),
-  }, 200, {
-    page,
-    limit,
-    total,
-    totalPages: Math.ceil(total / limit),
-  });
+  sendSuccess(
+    res,
+    "Drivers fetched",
+    {
+      drivers: drivers.map(withKycDocuments),
+    },
+    200,
+    {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  );
 }
 
 export async function getRiders(req: Request, res: Response): Promise<void> {
@@ -230,9 +664,7 @@ export async function getBasePrices(
   res: Response,
 ): Promise<void> {
   await ensureDefaultBasePrices();
-  const basePrices = await BasePrice.find()
-    .sort({ vehicleType: 1 })
-    .lean();
+  const basePrices = await BasePrice.find().sort({ vehicleType: 1 }).lean();
 
   sendSuccess(res, "Base prices fetched", { basePrices });
 }
@@ -241,7 +673,8 @@ export async function createBasePrice(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const { vehicleType, basePrice, pricePerKm, minimumFare, isActive } = req.body;
+  const { vehicleType, basePrice, pricePerKm, minimumFare, isActive } =
+    req.body;
 
   if (!isVehicleType(vehicleType)) {
     sendError(res, "Invalid vehicle type", 400);
@@ -333,14 +766,20 @@ export async function getPendingDrivers(
     }),
   ]);
 
-  sendSuccess(res, "Pending driver approvals fetched", {
-    drivers: drivers.map(withKycDocuments),
-  }, 200, {
-    page,
-    limit,
-    total,
-    totalPages: Math.ceil(total / limit),
-  });
+  sendSuccess(
+    res,
+    "Pending driver approvals fetched",
+    {
+      drivers: drivers.map(withKycDocuments),
+    },
+    200,
+    {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  );
 }
 
 export async function getDriverKycDetails(

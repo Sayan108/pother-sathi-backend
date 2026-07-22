@@ -65,6 +65,7 @@ export interface IDriver extends Document {
   isAvailable: boolean;
   currentRideId?: mongoose.Types.ObjectId;
   fcmToken?: string;
+  fcmTokens?: string[];
 
   // Referral
   isUnionLeader?: boolean;
@@ -188,6 +189,7 @@ const driverSchema = new Schema<IDriver>(
     isAvailable: { type: Boolean, default: false },
     currentRideId: { type: Schema.Types.ObjectId, ref: "Ride" },
     fcmToken: { type: String },
+    fcmTokens: { type: [String], default: [] },
     socketId: { type: String },
 
     isUnionLeader: { type: Boolean, default: false },
@@ -223,11 +225,16 @@ driverSchema.index({ kycStatus: 1, createdAt: -1 });
 
 driverSchema.pre("validate", function (next) {
   if (this.isModified("accountStatus") && !this.isModified("kycStatus")) {
-    if (this.accountStatus === "verified" || this.accountStatus === "approved" || this.accountStatus === "active")
+    if (
+      this.accountStatus === "verified" ||
+      this.accountStatus === "approved" ||
+      this.accountStatus === "active"
+    )
       this.kycStatus = "approved";
     else if (this.accountStatus === "pending") this.kycStatus = "pending";
     else if (this.accountStatus === "rejected") this.kycStatus = "rejected";
-    else if (this.accountStatus === "incomplete") this.kycStatus = "not_submitted";
+    else if (this.accountStatus === "incomplete")
+      this.kycStatus = "not_submitted";
   }
   next();
 });
@@ -263,6 +270,7 @@ driverSchema.statics.findNearby = function (
 driverSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.fcmToken;
+  delete obj.fcmTokens;
   delete obj.socketId;
   return obj;
 };

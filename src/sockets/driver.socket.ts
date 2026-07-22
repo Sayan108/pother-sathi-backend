@@ -161,6 +161,7 @@ export async function registerDriverSocketHandlers(
   }
 
   socket.join(`driver:${driverId}`);
+  socket.join("drivers");
   driverSocketMap.set(driverId, socket.id);
   await Driver.findByIdAndUpdate(driverId, { socketId: socket.id }).exec();
 

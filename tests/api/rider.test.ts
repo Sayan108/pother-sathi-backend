@@ -251,6 +251,9 @@ describe("PUT /api/rider/fcm-token", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+    const rider = await User.findById(riderId).lean();
+    expect(rider?.fcmToken).toBe("test-fcm-token-abc123");
+    expect(rider?.fcmTokens).toContain("test-fcm-token-abc123");
     console.log(
       `[PUT /api/rider/fcm-token] status=${res.status} time=${time}ms`,
     );

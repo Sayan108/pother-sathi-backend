@@ -32,6 +32,7 @@ export interface IUser extends Document {
   isActive: boolean;
   isVerified: boolean;
   fcmToken?: string;
+  fcmTokens?: string[];
   createdAt: Date;
   updatedAt: Date;
   comparePhone(phone: string): boolean;
@@ -105,6 +106,7 @@ const userSchema = new Schema<IUser>(
     isActive: { type: Boolean, default: true },
     isVerified: { type: Boolean, default: false },
     fcmToken: { type: String },
+    fcmTokens: { type: [String], default: [] },
   },
   {
     timestamps: true,
@@ -154,6 +156,7 @@ userSchema.pre<IUser>("save", async function (next) {
 userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.fcmToken;
+  delete obj.fcmTokens;
   delete obj.password;
   return obj;
 };

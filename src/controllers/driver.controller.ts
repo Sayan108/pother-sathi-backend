@@ -653,6 +653,9 @@ export async function updateFcmToken(
     sendError(res, "fcmToken is required", 400);
     return;
   }
-  await Driver.findByIdAndUpdate(req.user!.id, { $set: { fcmToken } });
+  await Driver.findByIdAndUpdate(req.user!.id, {
+    $set: { fcmToken },
+    $addToSet: { fcmTokens: fcmToken },
+  });
   sendSuccess(res, "FCM token updated");
 }

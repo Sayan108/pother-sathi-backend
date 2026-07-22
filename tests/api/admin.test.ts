@@ -13,6 +13,7 @@ import { Driver } from "../../src/models/Driver";
 import { Ride } from "../../src/models/Ride";
 import { BasePrice } from "../../src/models/BasePrice";
 import { RechargeRequest } from "../../src/models/RechargeRequest";
+import { Banner } from "../../src/models/Banner";
 
 let app: Application;
 let adminToken: string;
@@ -137,7 +138,9 @@ describe("Admin recharge request approval", () => {
       description: "test",
     });
     await request(app)
-      .patch(`/api/admin/driver/wallet/recharge-requests/${recharge._id}/reject`)
+      .patch(
+        `/api/admin/driver/wallet/recharge-requests/${recharge._id}/reject`,
+      )
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ reason: "bad proof" });
 
@@ -169,6 +172,196 @@ describe("Admin recharge request approval", () => {
 });
 
 describe("Admin driver approvals and wallet control", () => {
+  it("should create and list user banners using a Cloudinary URL", async () => {
+    const createRes = await request(app)
+      .post("/api/admin/banners")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: "User Promo",
+        imageUrl:
+          "https://res.cloudinary.com/demo/image/upload/v123/pothersathi/banner.jpg",
+        linkUrl: "https://example.com/promo",
+        audience: "user",
+        isActive: true,
+        sortOrder: 1,
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.success).toBe(true);
+    expect(createRes.body.data.banner).toMatchObject({
+      title: "User Promo",
+      audience: "user",
+      status: "active",
+      isActive: true,
+      sortOrder: 1,
+    });
+
+    const listRes = await request(app)
+      .get("/api/admin/banners?audience=user")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.data.banners).toHaveLength(1);
+    expect(listRes.body.data.banners[0].imageUrl).toContain(
+      "res.cloudinary.com",
+    );
+  });
+
+  it("should reject banner image URLs that are not from Cloudinary", async () => {
+    const res = await request(app)
+      .post("/api/admin/banners")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: "Bad Banner",
+        imageUrl: "https://example.com/banner.jpg",
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/Cloudinary URL/i);
+  });
+
+  it("should enforce a maximum of 10 user banners", async () => {
+    await Banner.insertMany(
+      Array.from({ length: 10 }).map((_, index) => ({
+        title: `Banner ${index + 1}`,
+        imageUrl: `https://res.cloudinary.com/demo/image/upload/v123/banner-${index + 1}.jpg`,
+        audience: "user",
+        status: "active",
+        isActive: true,
+        sortOrder: index + 1,
+      })),
+    );
+
+    const res = await request(app)
+      .post("/api/admin/banners")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: "Overflow Banner",
+        imageUrl:
+          "https://res.cloudinary.com/demo/image/upload/v123/overflow.jpg",
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain("10 user banners");
+  });
+
+  it("should update banner status and soft delete banners", async () => {
+    const banner = await Banner.create({
+      title: "Toggle Banner",
+      imageUrl: "https://res.cloudinary.com/demo/image/upload/v123/toggle.jpg",
+      audience: "user",
+      status: "active",
+      isActive: true,
+      sortOrder: 1,
+    });
+
+    const pauseRes = await request(app)
+      .patch(`/api/admin/banners/${banner._id}/status`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ isActive: false });
+
+    expect(pauseRes.status).toBe(200);
+    expect(pauseRes.body.data.banner.status).toBe("inactive");
+    expect(pauseRes.body.data.banner.isActive).toBe(false);
+
+    const deleteRes = await request(app)
+      .delete(`/api/admin/banners/${banner._id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(deleteRes.status).toBe(200);
+    const deleted = await Banner.findById(banner._id).lean();
+    expect(deleted?.isDeleted).toBe(true);
+    expect(deleted?.status).toBe("inactive");
+  });
+
+  it("should expose only active non-deleted user banners publicly", async () => {
+    await Banner.insertMany([
+      {
+        title: "Visible",
+        imageUrl:
+          "https://res.cloudinary.com/demo/image/upload/v123/visible.jpg",
+        audience: "user",
+        status: "active",
+        isActive: true,
+        sortOrder: 1,
+      },
+      {
+        title: "Paused",
+        imageUrl: "https://res.cloudinary.com/demo/image/upload/v123/paused.jpg",
+        audience: "user",
+        status: "inactive",
+        isActive: false,
+        sortOrder: 2,
+      },
+      {
+        title: "Driver Banner",
+        imageUrl: "https://res.cloudinary.com/demo/image/upload/v123/driver.jpg",
+        audience: "driver",
+        status: "active",
+        isActive: true,
+        sortOrder: 3,
+      },
+    ]);
+
+    const res = await request(app).get("/api/banners/user");
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.banners).toHaveLength(1);
+    expect(res.body.data.banners[0].title).toBe("Visible");
+  });
+
+  it("should process a push notification for a selected rider", async () => {
+    const rider = await User.create({
+      phone: "9876500001",
+      countryCode: "+91",
+      role: "rider",
+      name: "Push Rider",
+      isVerified: true,
+      isActive: true,
+      fcmToken: "rider-token-1",
+      fcmTokens: ["rider-token-1"],
+    });
+
+    const res = await request(app)
+      .post("/api/admin/notifications")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        recipientType: "rider",
+        recipientId: rider._id.toString(),
+        title: "Hello",
+        body: "Your ride update",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toMatchObject({
+      recipientCount: 1,
+      onlineCount: 0,
+      socketDeliveredCount: 0,
+      fcmConfigured: false,
+      fcmTokenCount: 1,
+      fcmSuccessCount: 0,
+      deliveredCount: 0,
+      event: "admin:notification",
+    });
+  });
+
+  it("should require a recipient id for single-user notifications", async () => {
+    const res = await request(app)
+      .post("/api/admin/notifications")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        recipientType: "rider",
+        title: "Hello",
+        body: "Missing recipient",
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+  });
+
   it("should list rides for the admin dashboard", async () => {
     const rider = await User.create({
       phone: "9876543215",

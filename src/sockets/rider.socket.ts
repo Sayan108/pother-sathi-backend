@@ -25,6 +25,7 @@ export function registerRiderSocketHandlers(
 
   // Join rider-specific room
   socket.join(`rider:${riderId}`);
+  socket.join("riders");
 
   // Register in-memory socket map (used by ride controller to push events)
   riderSocketMap.set(riderId, socket.id);

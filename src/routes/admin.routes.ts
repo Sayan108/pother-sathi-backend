@@ -22,6 +22,11 @@ import {
   updateRiderAccount,
   deleteDriverAccount,
   deleteRiderAccount,
+  getBanners,
+  createBanner,
+  updateBanner,
+  deleteBanner,
+  sendNotification,
 } from "../controllers/admin.controller";
 import { authenticate, requireAdmin } from "../middleware/auth.middleware";
 
@@ -44,6 +49,121 @@ router.get("/drivers/kyc/pending", getPendingDrivers);
 router.get("/riders", getRiders);
 router.get("/leaders", getUnionLeaders);
 router.get("/rides", getRides);
+router.post(
+  "/notifications",
+  [
+    body("title")
+      .trim()
+      .notEmpty()
+      .withMessage("Notification title is required")
+      .isLength({ max: 120 })
+      .withMessage("Notification title must be 120 characters or fewer"),
+    body("body")
+      .trim()
+      .notEmpty()
+      .withMessage("Notification body is required")
+      .isLength({ max: 500 })
+      .withMessage("Notification body must be 500 characters or fewer"),
+    body("recipientType")
+      .isIn(["rider", "driver", "all_riders", "all_drivers", "all"])
+      .withMessage("Invalid recipient type"),
+    body("recipientId")
+      .optional({ checkFalsy: true })
+      .isMongoId()
+      .withMessage("recipientId must be a valid id"),
+    body("data").optional().isObject().withMessage("data must be an object"),
+  ],
+  validateRequest,
+  sendNotification,
+);
+router.get("/banners", getBanners);
+router.get("/user-banners", getBanners);
+router.post(
+  "/banners",
+  [
+    body("title")
+      .trim()
+      .notEmpty()
+      .withMessage("Banner title is required")
+      .isLength({ max: 120 })
+      .withMessage("Banner title must be 120 characters or fewer"),
+    body("imageUrl")
+      .optional()
+      .isURL({ protocols: ["http", "https"], require_protocol: true })
+      .withMessage("imageUrl must be a valid URL"),
+    body("bannerUrl")
+      .optional()
+      .isURL({ protocols: ["http", "https"], require_protocol: true })
+      .withMessage("bannerUrl must be a valid URL"),
+    body("linkUrl")
+      .optional({ checkFalsy: true })
+      .isURL({ protocols: ["http", "https"], require_protocol: true })
+      .withMessage("linkUrl must be a valid URL"),
+    body("audience")
+      .optional()
+      .isIn(["user", "driver"])
+      .withMessage("audience must be user or driver"),
+    body("status")
+      .optional()
+      .isIn(["active", "inactive", "paused"])
+      .withMessage("status must be active or inactive"),
+    body("isActive")
+      .optional()
+      .isBoolean()
+      .withMessage("isActive must be boolean"),
+    body("sortOrder")
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage("sortOrder must be non-negative"),
+  ],
+  validateRequest,
+  createBanner,
+);
+router.post(
+  "/user-banners",
+  [
+    body("title")
+      .trim()
+      .notEmpty()
+      .withMessage("Banner title is required")
+      .isLength({ max: 120 })
+      .withMessage("Banner title must be 120 characters or fewer"),
+    body("imageUrl")
+      .optional()
+      .isURL({ protocols: ["http", "https"], require_protocol: true })
+      .withMessage("imageUrl must be a valid URL"),
+    body("bannerUrl")
+      .optional()
+      .isURL({ protocols: ["http", "https"], require_protocol: true })
+      .withMessage("bannerUrl must be a valid URL"),
+    body("linkUrl")
+      .optional({ checkFalsy: true })
+      .isURL({ protocols: ["http", "https"], require_protocol: true })
+      .withMessage("linkUrl must be a valid URL"),
+    body("status")
+      .optional()
+      .isIn(["active", "inactive", "paused"])
+      .withMessage("status must be active or inactive"),
+    body("isActive")
+      .optional()
+      .isBoolean()
+      .withMessage("isActive must be boolean"),
+    body("sortOrder")
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage("sortOrder must be non-negative"),
+  ],
+  validateRequest,
+  createBanner,
+);
+router.patch("/banners/:id/status", updateBanner);
+router.patch("/banners/:id", updateBanner);
+router.put("/banners/:id", updateBanner);
+router.patch("/user-banners/:id", updateBanner);
+router.put("/user-banners/:id", updateBanner);
+router.delete("/banners/:id", deleteBanner);
+router.delete("/user-banners/:id", deleteBanner);
+router.delete("/banners/user/:id", deleteBanner);
 router.get("/base-prices", getBasePrices);
 router.get("/fares/base-prices", getBasePrices);
 router.post(
@@ -52,10 +172,19 @@ router.post(
     body("vehicleType")
       .isIn(["bike", "auto", "toto", "car", "delivery"])
       .withMessage("Invalid vehicle type"),
-    body("basePrice").isFloat({ min: 0 }).withMessage("Base price must be non-negative"),
-    body("pricePerKm").isFloat({ min: 0 }).withMessage("Price per km must be non-negative"),
-    body("minimumFare").isFloat({ min: 0 }).withMessage("Minimum fare must be non-negative"),
-    body("isActive").optional().isBoolean().withMessage("isActive must be boolean"),
+    body("basePrice")
+      .isFloat({ min: 0 })
+      .withMessage("Base price must be non-negative"),
+    body("pricePerKm")
+      .isFloat({ min: 0 })
+      .withMessage("Price per km must be non-negative"),
+    body("minimumFare")
+      .isFloat({ min: 0 })
+      .withMessage("Minimum fare must be non-negative"),
+    body("isActive")
+      .optional()
+      .isBoolean()
+      .withMessage("isActive must be boolean"),
   ],
   validateRequest,
   createBasePrice,
@@ -66,10 +195,19 @@ router.post(
     body("vehicleType")
       .isIn(["bike", "auto", "toto", "car", "delivery"])
       .withMessage("Invalid vehicle type"),
-    body("basePrice").isFloat({ min: 0 }).withMessage("Base price must be non-negative"),
-    body("pricePerKm").isFloat({ min: 0 }).withMessage("Price per km must be non-negative"),
-    body("minimumFare").isFloat({ min: 0 }).withMessage("Minimum fare must be non-negative"),
-    body("isActive").optional().isBoolean().withMessage("isActive must be boolean"),
+    body("basePrice")
+      .isFloat({ min: 0 })
+      .withMessage("Base price must be non-negative"),
+    body("pricePerKm")
+      .isFloat({ min: 0 })
+      .withMessage("Price per km must be non-negative"),
+    body("minimumFare")
+      .isFloat({ min: 0 })
+      .withMessage("Minimum fare must be non-negative"),
+    body("isActive")
+      .optional()
+      .isBoolean()
+      .withMessage("isActive must be boolean"),
   ],
   validateRequest,
   createBasePrice,
@@ -81,10 +219,22 @@ router.put(
       .optional()
       .isIn(["bike", "auto", "toto", "car", "delivery"])
       .withMessage("Invalid vehicle type"),
-    body("basePrice").optional().isFloat({ min: 0 }).withMessage("Base price must be non-negative"),
-    body("pricePerKm").optional().isFloat({ min: 0 }).withMessage("Price per km must be non-negative"),
-    body("minimumFare").optional().isFloat({ min: 0 }).withMessage("Minimum fare must be non-negative"),
-    body("isActive").optional().isBoolean().withMessage("isActive must be boolean"),
+    body("basePrice")
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage("Base price must be non-negative"),
+    body("pricePerKm")
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage("Price per km must be non-negative"),
+    body("minimumFare")
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage("Minimum fare must be non-negative"),
+    body("isActive")
+      .optional()
+      .isBoolean()
+      .withMessage("isActive must be boolean"),
   ],
   validateRequest,
   updateBasePrice,
@@ -96,10 +246,22 @@ router.put(
       .optional()
       .isIn(["bike", "auto", "toto", "car", "delivery"])
       .withMessage("Invalid vehicle type"),
-    body("basePrice").optional().isFloat({ min: 0 }).withMessage("Base price must be non-negative"),
-    body("pricePerKm").optional().isFloat({ min: 0 }).withMessage("Price per km must be non-negative"),
-    body("minimumFare").optional().isFloat({ min: 0 }).withMessage("Minimum fare must be non-negative"),
-    body("isActive").optional().isBoolean().withMessage("isActive must be boolean"),
+    body("basePrice")
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage("Base price must be non-negative"),
+    body("pricePerKm")
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage("Price per km must be non-negative"),
+    body("minimumFare")
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage("Minimum fare must be non-negative"),
+    body("isActive")
+      .optional()
+      .isBoolean()
+      .withMessage("isActive must be boolean"),
   ],
   validateRequest,
   updateBasePrice,
