@@ -4,17 +4,15 @@ import { User } from "../models/User";
 import { AuthenticatedSocket } from "./socket.middleware";
 import { driverSocketMap } from "./driver.socket";
 import { riderSocketMap } from "../controllers/ride.controller";
-import { env } from "../config/environment";
 import { logger } from "../utils/logger";
+import { calculateFareFromBasePrice, validateCoupon } from "../services/fare.service";
+import { getRoadRouteMetrics } from "../services/route-distance.service";
+import { findNearbyAvailableDrivers } from "../services/ride-matching.service";
 
 function getLiveDriverSocketId(driver: any): string | undefined {
   const driverId = driver?._id?.toString();
   if (!driverId) return undefined;
   return driverSocketMap.get(driverId);
-}
-
-function filterLiveDrivers(drivers: any[]) {
-  return drivers.filter((driver) => Boolean(getLiveDriverSocketId(driver)));
 }
 
 export function registerRiderSocketHandlers(
@@ -40,55 +38,32 @@ export function registerRiderSocketHandlers(
   socket.on("ride:search", async (data, cb) => {
     try {
       const { pickup, drop, vehicleType, couponCode } = data;
-      // Calculate distance and fare
-      const {
-        calculateDistance,
-        calculateFareFromBasePrice,
-        validateCoupon,
-      } = require("../services/fare.service");
-      const distanceKm = calculateDistance(
-        pickup.lat,
-        pickup.lng,
-        drop.lat,
-        drop.lng,
-      );
+      if (couponCode) {
+        const couponResult = validateCoupon(couponCode);
+        if (!couponResult.valid) {
+          cb({ success: false, error: "Invalid coupon code" });
+          return;
+        }
+      }
+      const routeMetrics = await getRoadRouteMetrics(pickup, drop);
+      const distanceKm = routeMetrics.distanceKm;
       const fareBreakdown = await calculateFareFromBasePrice(
         distanceKm,
         vehicleType,
         couponCode,
       );
-      const { Driver } = require("../models/Driver");
-      let availableDrivers = await Driver.find({
+      fareBreakdown.estimatedDuration = routeMetrics.durationMinutes;
+      const liveDrivers = await findNearbyAvailableDrivers(
+        pickup,
         vehicleType,
-        $or: [{ accountStatus: "verified" }, { kycStatus: "approved" }],
-        isActive: true,
-        isOnline: true,
-        isAvailable: true,
-      }).lean();
-
-      if (!availableDrivers.length && env.DEV_SEED_ACTIVE_DRIVERS) {
-        const seedPhones = [
-          "9000000001",
-          "9000000002",
-          "9000000003",
-          "9000000004",
-          "9000000005",
-        ];
-        availableDrivers = await Driver.find({
-          phone: { $in: seedPhones },
-          vehicleType,
-          $or: [{ accountStatus: "verified" }, { kycStatus: "approved" }],
-          isActive: true,
-          isOnline: true,
-          isAvailable: true,
-        }).lean();
-      }
-
-      const liveDrivers = filterLiveDrivers(availableDrivers);
+        Array.from(driverSocketMap.keys()),
+      );
 
       cb({
         success: true,
         fareBreakdown,
+        routeMetrics,
+        distanceKm,
         availableDrivers: liveDrivers.map((d: any) => ({
           _id: d._id,
           name: d.name,
@@ -120,12 +95,6 @@ export function registerRiderSocketHandlers(
         couponCode,
         paymentMethod = "cash",
       } = data;
-      const {
-        calculateDistance,
-        calculateFareFromBasePrice,
-        validateCoupon,
-      } = require("../services/fare.service");
-      const { Driver } = require("../models/Driver");
       // Check for active ride
       const existingRide = await Ride.findOne({
         riderId,
@@ -151,41 +120,19 @@ export function registerRiderSocketHandlers(
           return;
         }
       }
-      const distanceKm = calculateDistance(
-        pickup.lat,
-        pickup.lng,
-        drop.lat,
-        drop.lng,
-      );
+      const routeMetrics = await getRoadRouteMetrics(pickup, drop);
+      const distanceKm = routeMetrics.distanceKm;
       const fareBreakdown = await calculateFareFromBasePrice(
         distanceKm,
         vehicleType,
         couponCode,
       );
-      const driverFilter = {
+      fareBreakdown.estimatedDuration = routeMetrics.durationMinutes;
+      const liveDrivers = await findNearbyAvailableDrivers(
+        pickup,
         vehicleType,
-        $or: [{ accountStatus: "verified" }, { kycStatus: "approved" }],
-        isActive: true,
-        isOnline: true,
-        isAvailable: true,
-      };
-
-      let availableDrivers = await Driver.find(driverFilter).lean();
-      if (!availableDrivers.length && env.DEV_SEED_ACTIVE_DRIVERS) {
-        const seedPhones = [
-          "9000000001",
-          "9000000002",
-          "9000000003",
-          "9000000004",
-          "9000000005",
-        ];
-        availableDrivers = await Driver.find({
-          ...driverFilter,
-          phone: { $in: seedPhones },
-        }).lean();
-      }
-
-      const liveDrivers = filterLiveDrivers(availableDrivers);
+        Array.from(driverSocketMap.keys()),
+      );
 
       if (!liveDrivers.length) {
         cb({ success: false, error: "No drivers available" });
@@ -201,7 +148,7 @@ export function registerRiderSocketHandlers(
         pickup,
         drop,
         distance: distanceKm,
-        duration: fareBreakdown.estimatedDuration,
+        duration: routeMetrics.durationMinutes,
         vehicleType,
         fare: fareBreakdown.finalFare,
         platformFee: fareBreakdown.platformFee,
@@ -241,7 +188,8 @@ export function registerRiderSocketHandlers(
           vehicleType: ride.vehicleType,
           distance: `${Number(distanceKm).toFixed(1)} km`,
           distanceKm,
-          estimatedDuration: fareBreakdown.estimatedDuration,
+          estimatedDuration: routeMetrics.durationMinutes,
+          routeMetrics,
         };
         io.to(driverSocketId).emit("ride:request", rideRequestPayload);
         io.to(driverSocketId).emit("ride:assigned", rideRequestPayload);
@@ -261,6 +209,7 @@ export function registerRiderSocketHandlers(
         rideId: ride._id,
         otp,
         fareBreakdown,
+        routeMetrics,
         status: "requested",
         driver: {
           _id: assignedDriver._id,

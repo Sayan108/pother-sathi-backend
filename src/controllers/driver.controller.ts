@@ -34,7 +34,7 @@ export const registerDriverValidation = [
     .isLength({ min: 2, max: 100 })
     .withMessage("Name is required"),
   body("vehicleType")
-    .isIn(["bike", "auto", "toto", "car", "delivery"])
+    .isIn(["bike", "auto", "toto", "car", "micro", "delivery"])
     .withMessage("Invalid vehicle type"),
   body("vehicleModel")
     .trim()
@@ -505,6 +505,7 @@ export async function updateLocation(
   await Driver.findByIdAndUpdate(req.user!.id, {
     $set: {
       "location.coordinates": [lng, lat],
+      locationUpdatedAt: new Date(),
     },
   });
 

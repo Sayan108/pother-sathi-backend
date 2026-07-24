@@ -287,6 +287,82 @@ describe("Rider Socket Events", () => {
     );
   });
 
+  it("should only return live nearby drivers with fresh locations", async () => {
+    driverSocket = await connectSocket(driverToken);
+    await Driver.findByIdAndUpdate(driverId, {
+      $set: { locationUpdatedAt: new Date() },
+    });
+    await sleep(100);
+
+    const response = await promiseWithTimeout<any>((resolve) => {
+      riderSocket.emit(
+        "ride:search",
+        {
+          pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
+          drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
+          vehicleType: "auto",
+        },
+        resolve,
+      );
+    }, 5000);
+
+    expect(response.success).toBe(true);
+    expect(response.availableDrivers.map((driver: any) => driver._id.toString())).toContain(
+      driverId,
+    );
+
+    await Driver.findByIdAndUpdate(driverId, {
+      $set: { locationUpdatedAt: new Date(Date.now() - 60_000) },
+    });
+
+    const staleResponse = await promiseWithTimeout<any>((resolve) => {
+      riderSocket.emit(
+        "ride:search",
+        {
+          pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
+          drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
+          vehicleType: "auto",
+        },
+        resolve,
+      );
+    }, 5000);
+
+    expect(staleResponse.success).toBe(true);
+    expect(staleResponse.availableDrivers.map((driver: any) => driver._id.toString())).not.toContain(
+      driverId,
+    );
+  });
+
+  it("should not offer rides to drivers outside the pickup radius", async () => {
+    driverSocket = await connectSocket(driverToken);
+    const received = jest.fn();
+    driverSocket.on("ride:request", received);
+    await Driver.findByIdAndUpdate(driverId, {
+      $set: {
+        "location.coordinates": [72.8777, 19.076],
+        locationUpdatedAt: new Date(),
+      },
+    });
+
+    const response = await promiseWithTimeout<any>((resolve) => {
+      riderSocket.emit(
+        "ride:book",
+        {
+          pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
+          drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
+          vehicleType: "auto",
+          paymentMethod: "cash",
+        },
+        resolve,
+      );
+    }, 5000);
+
+    await sleep(300);
+    expect(response.success).toBe(false);
+    expect(response.error).toContain("No drivers available");
+    expect(received).not.toHaveBeenCalled();
+  });
+
   it("should handle ride:book and return ride details", async () => {
     const start = Date.now();
     const response = await promiseWithTimeout<any>((resolve) => {
@@ -553,6 +629,43 @@ describe("Driver Socket Events", () => {
     const assignedEvent = await assignedEventPromise;
     expect(assignedEvent).toHaveProperty("rideId", ride._id.toString());
     expect(assignedEvent.driver).toHaveProperty("name");
+  });
+
+  it("should reject expired ride requests", async () => {
+    riderSocket = await connectSocket(riderToken);
+    await sleep(100);
+
+    const ride = await Ride.create({
+      riderId: new mongoose.Types.ObjectId(riderId),
+      driverId: new mongoose.Types.ObjectId(driverId),
+      pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
+      drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
+      distance: 5,
+      duration: 15,
+      vehicleType: "auto",
+      fare: 100,
+      platformFee: 15,
+      driverEarning: 85,
+      discount: 0,
+      paymentMethod: "cash",
+      otp: "1234",
+      status: "requested",
+      createdAt: new Date(Date.now() - 60_000),
+      updatedAt: new Date(Date.now() - 60_000),
+    });
+
+    const response = await promiseWithTimeout<any>((resolve) => {
+      driverSocket.emit(
+        "ride:accept",
+        { rideId: ride._id.toString() },
+        resolve,
+      );
+    }, 3000);
+
+    expect(response.success).toBe(false);
+    expect(response.error).toContain("expired");
+    const expiredRide = await Ride.findById(ride._id).lean();
+    expect(expiredRide?.status).toBe("no_driver");
   });
 
   it("should forward driver location updates to the rider for an assigned ride", async () => {

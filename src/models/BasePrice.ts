@@ -18,7 +18,7 @@ const basePriceSchema = new Schema<IBasePrice>(
       type: String,
       required: true,
       unique: true,
-      enum: ["bike", "auto", "toto", "car", "delivery"],
+      enum: ["bike", "auto", "toto", "car", "micro", "delivery"],
     },
     basePrice: { type: Number, required: true, min: 0 },
     pricePerKm: { type: Number, required: true, min: 0 },

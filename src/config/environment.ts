@@ -64,6 +64,22 @@ export const env = {
   DRIVER_SEARCH_RADIUS_KM: parseFloat(
     process.env.DRIVER_SEARCH_RADIUS_KM || "5",
   ),
+  MAX_DRIVER_PICKUP_RADIUS_KM: parseFloat(
+    process.env.MAX_DRIVER_PICKUP_RADIUS_KM ||
+      process.env.DRIVER_SEARCH_RADIUS_KM ||
+      "3",
+  ),
+  DRIVER_LOCATION_STALE_AFTER_SECONDS: parseInt(
+    process.env.DRIVER_LOCATION_STALE_AFTER_SECONDS || "45",
+    10,
+  ),
+  RIDE_REQUEST_EXPIRY_SECONDS: parseInt(
+    process.env.RIDE_REQUEST_EXPIRY_SECONDS || "30",
+    10,
+  ),
+  GOOGLE_MAPS_SERVER_API_KEY: process.env.GOOGLE_MAPS_SERVER_API_KEY || "",
+  OSRM_ROUTE_URL:
+    process.env.OSRM_ROUTE_URL || "https://router.project-osrm.org/route/v1/driving",
   NEW_RIDER_WALLET_CREDIT: parseFloat(
     process.env.NEW_RIDER_WALLET_CREDIT || "3000",
   ),

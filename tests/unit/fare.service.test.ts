@@ -72,8 +72,8 @@ describe('calculateFare', () => {
   });
 
   it('should handle all vehicle types', () => {
-    const vehicleTypes: Array<'bike' | 'auto' | 'toto' | 'car' | 'delivery'> = [
-      'bike', 'auto', 'toto', 'car', 'delivery',
+    const vehicleTypes: Array<'bike' | 'auto' | 'toto' | 'car' | 'micro' | 'delivery'> = [
+      'bike', 'auto', 'toto', 'car', 'micro', 'delivery',
     ];
     vehicleTypes.forEach((type) => {
       const fare = calculateFare(5, type);

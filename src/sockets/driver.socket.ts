@@ -8,6 +8,10 @@ import { AuthenticatedSocket } from "./socket.middleware";
 import { riderSocketMap } from "../controllers/ride.controller";
 import { isDriverKycApproved } from "../middleware/auth.middleware";
 import { logger } from "../utils/logger";
+import {
+  findNearbyAvailableDrivers,
+  isRideRequestExpired,
+} from "../services/ride-matching.service";
 
 export const driverSocketMap = new Map<string, string>();
 
@@ -106,21 +110,27 @@ async function offerRideToNextDriver(
   }
 
   const rejectedIds = (ride.rejectedDriverIds ?? []).map((id) => id.toString());
-  const liveDriverIds = Array.from(driverSocketMap.keys()).filter(
-    (driverId) => !rejectedIds.includes(driverId),
-  );
+  if (isRideRequestExpired(ride)) {
+    ride.status = "no_driver" as any;
+    ride.driverId = undefined;
+    await ride.save();
+    emitToRider(io, ride.riderId, "ride:no_driver", {
+      rideId: ride._id,
+      reason: "Ride request expired",
+    });
+    emitToRider(io, ride.riderId, "ride:driver_not_found", {
+      rideId: ride._id,
+      reason: "Ride request expired",
+    });
+    return { success: true, noDriver: true, expired: true };
+  }
 
-  const candidates = await Driver.find({
-    _id: {
-      $in: liveDriverIds.map((id) => new mongoose.Types.ObjectId(id)),
-      $nin: ride.rejectedDriverIds ?? [],
-    },
-    vehicleType: ride.vehicleType,
-    $or: [{ accountStatus: "verified" }, { kycStatus: "approved" }],
-    isActive: true,
-    isOnline: true,
-    isAvailable: true,
-  });
+  const candidates = await findNearbyAvailableDrivers(
+    ride.pickup,
+    ride.vehicleType,
+    Array.from(driverSocketMap.keys()),
+    rejectedIds,
+  );
 
   for (const candidate of candidates) {
     ride.driverId = candidate._id;
@@ -199,6 +209,20 @@ export async function registerDriverSocketHandlers(
       });
       if (!ride) {
         fail(cb, "Ride is no longer available");
+        return;
+      }
+      if (isRideRequestExpired(ride)) {
+        ride.status = "no_driver" as any;
+        await ride.save();
+        fail(cb, "Ride request expired");
+        emitToRider(io, ride.riderId, "ride:no_driver", {
+          rideId: ride._id,
+          reason: "Ride request expired",
+        });
+        emitToRider(io, ride.riderId, "ride:driver_not_found", {
+          rideId: ride._id,
+          reason: "Ride request expired",
+        });
         return;
       }
       if (!driver.isOnline || !driver.isAvailable) {
@@ -477,7 +501,10 @@ export async function registerDriverSocketHandlers(
     }
 
     await Driver.findByIdAndUpdate(driverId, {
-      "location.coordinates": [lng, lat],
+      $set: {
+        "location.coordinates": [lng, lat],
+        locationUpdatedAt: new Date(),
+      },
     });
 
     if (rideId) {

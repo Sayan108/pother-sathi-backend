@@ -7,11 +7,11 @@ import { User } from "../models/User";
 import { Transaction } from "../models/Transaction";
 import {
   calculateFareFromBasePrice,
-  calculateDistance,
   validateCoupon,
 } from "../services/fare.service";
+import { getRoadRouteMetrics } from "../services/route-distance.service";
+import { isRideRequestExpired } from "../services/ride-matching.service";
 import { getIO } from "../config/socket";
-import { env } from "../config/environment";
 import {
   sendSuccess,
   sendCreated,
@@ -74,7 +74,7 @@ export const bookRideValidation = [
     .toFloat(),
   body("drop.address").optional().trim(),
   body("vehicleType")
-    .isIn(["bike", "auto", "toto", "car", "delivery"])
+    .isIn(["bike", "auto", "toto", "car", "micro", "delivery"])
     .withMessage("Invalid vehicle type"),
   body("paymentMethod").optional().isIn(["cash", "wallet", "upi"]),
   body("couponCode").optional().trim().toUpperCase(),
@@ -161,6 +161,12 @@ export async function acceptRide(req: Request, res: Response): Promise<void> {
     sendConflict(res, "Ride is no longer available");
     return;
     }
+  }
+  if (isRideRequestExpired(ride)) {
+    ride.status = "no_driver";
+    await ride.save();
+    sendConflict(res, "Ride request expired");
+    return;
   }
   if (driver.accountStatus !== "verified" && driver.kycStatus !== "approved") {
     sendForbidden(res, "Driver KYC approval required");
@@ -543,20 +549,26 @@ export async function getFareEstimate(
     return;
   }
 
-  const distanceKm = calculateDistance(
-    parseFloat(pickupLat),
-    parseFloat(pickupLng),
-    parseFloat(dropLat),
-    parseFloat(dropLng),
-  );
+  const pickup = {
+    lat: parseFloat(pickupLat),
+    lng: parseFloat(pickupLng),
+  };
+  const drop = {
+    lat: parseFloat(dropLat),
+    lng: parseFloat(dropLng),
+  };
+  const routeMetrics = await getRoadRouteMetrics(pickup, drop);
+  const distanceKm = routeMetrics.distanceKm;
 
   const fareBreakdown = await calculateFareFromBasePrice(
     distanceKm,
     vehicleType as VehicleType,
     couponCode,
   );
+  fareBreakdown.estimatedDuration = routeMetrics.durationMinutes;
   sendSuccess(res, "Fare estimate calculated", {
     distanceKm,
+    routeMetrics,
     ...fareBreakdown,
   });
 }

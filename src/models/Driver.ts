@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema, Model } from "mongoose";
 
-export type VehicleType = "bike" | "auto" | "toto" | "car" | "delivery";
+export type VehicleType = "bike" | "auto" | "toto" | "car" | "micro" | "delivery";
 export type DriverStatus =
   | "incomplete"
   | "pending"
@@ -51,6 +51,7 @@ export interface IDriver extends Document {
     type: "Point";
     coordinates: [number, number]; // [lng, lat]
   };
+  locationUpdatedAt?: Date;
   serviceArea?: string;
 
   // Status
@@ -136,7 +137,7 @@ const driverSchema = new Schema<IDriver>(
 
     vehicleType: {
       type: String,
-      enum: ["bike", "auto", "toto", "car", "delivery"],
+      enum: ["bike", "auto", "toto", "car", "micro", "delivery"],
     },
     vehicleModel: { type: String },
     vehicleNumber: { type: String, uppercase: true },
@@ -159,6 +160,7 @@ const driverSchema = new Schema<IDriver>(
         default: [88.3639, 22.5726], // Default: Kolkata
       },
     },
+    locationUpdatedAt: { type: Date },
     serviceArea: { type: String },
 
     accountStatus: {

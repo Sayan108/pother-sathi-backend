@@ -128,7 +128,7 @@ router.post(
   "/base-prices",
   [
     body("vehicleType")
-      .isIn(["bike", "auto", "toto", "car", "delivery"])
+      .isIn(["bike", "auto", "toto", "car", "micro", "delivery"])
       .withMessage("Invalid vehicle type"),
     body("basePrice")
       .isFloat({ min: 0 })
@@ -151,7 +151,7 @@ router.post(
   "/fares/base-prices",
   [
     body("vehicleType")
-      .isIn(["bike", "auto", "toto", "car", "delivery"])
+      .isIn(["bike", "auto", "toto", "car", "micro", "delivery"])
       .withMessage("Invalid vehicle type"),
     body("basePrice")
       .isFloat({ min: 0 })
@@ -175,7 +175,7 @@ router.put(
   [
     body("vehicleType")
       .optional()
-      .isIn(["bike", "auto", "toto", "car", "delivery"])
+      .isIn(["bike", "auto", "toto", "car", "micro", "delivery"])
       .withMessage("Invalid vehicle type"),
     body("basePrice")
       .optional()
@@ -202,7 +202,7 @@ router.put(
   [
     body("vehicleType")
       .optional()
-      .isIn(["bike", "auto", "toto", "car", "delivery"])
+      .isIn(["bike", "auto", "toto", "car", "micro", "delivery"])
       .withMessage("Invalid vehicle type"),
     body("basePrice")
       .optional()

@@ -93,7 +93,7 @@ const rideSchema = new Schema<IRide>(
     vehicleType: {
       type: String,
       required: true,
-      enum: ['bike', 'auto', 'toto', 'car', 'delivery'],
+      enum: ['bike', 'auto', 'toto', 'car', 'micro', 'delivery'],
     },
 
     status: {

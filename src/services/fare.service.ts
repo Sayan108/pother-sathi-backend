@@ -13,6 +13,7 @@ export const DEFAULT_FARE_CONFIG: Record<VehicleType, FareConfig> = {
   auto: { basePrice: 30, pricePerKm: 15, minimumFare: 70 },
   toto: { basePrice: 25, pricePerKm: 12, minimumFare: 55 },
   car: { basePrice: 40, pricePerKm: 20, minimumFare: 80 },
+  micro: { basePrice: 35, pricePerKm: 18, minimumFare: 75 },
   delivery: { basePrice: 25, pricePerKm: 10, minimumFare: 50 },
 };
 
