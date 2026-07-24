@@ -20,9 +20,11 @@ jobs:
   deploy:
     name: Build and deploy
     runs-on: ubuntu-latest
+    environment: production
     env:
       DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH || '/var/www/pothersathi-backend' }}
       VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+      HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
 
     services:
       mongodb:
@@ -136,8 +138,28 @@ jobs:
             pm2 save
           fi
 
+          PORT="$(grep -E '^PORT=' .env | tail -n 1 | cut -d '=' -f 2- || true)"
+          PORT="${PORT:-5000}"
+          for attempt in 1 2 3 4 5; do
+            if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null; then
+              echo "Local health check passed on port ${PORT}."
+              break
+            fi
+            if [ "${attempt}" = "5" ]; then
+              echo "Local health check failed on port ${PORT}."
+              pm2 status || true
+              pm2 logs "${APP_NAME}" --lines 80 --nostream || true
+              exit 1
+            fi
+            sleep 3
+          done
+
           find "${DEPLOY_PATH}/releases" -mindepth 1 -maxdepth 1 -type d \
             | sort -r \
             | tail -n +6 \
             | xargs -r rm -rf
           EOF
+
+      - name: Smoke test public API
+        if: env.HEALTHCHECK_URL != ''
+        run: curl -fsS "${HEALTHCHECK_URL}"

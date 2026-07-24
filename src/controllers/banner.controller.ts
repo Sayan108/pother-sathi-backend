@@ -18,3 +18,20 @@ export async function getActiveUserBanners(
 
   sendSuccess(res, "User banners fetched", { banners });
 }
+
+export async function getActiveDriverBanners(
+  _req: Request,
+  res: Response,
+): Promise<void> {
+  const banners = await Banner.find({
+    audience: "driver",
+    status: "active",
+    isActive: true,
+    isDeleted: { $ne: true },
+  })
+    .sort({ sortOrder: 1, createdAt: -1 })
+    .select("title imageUrl linkUrl audience status sortOrder createdAt updatedAt")
+    .lean();
+
+  sendSuccess(res, "Driver banners fetched", { banners });
+}

@@ -132,6 +132,7 @@ beforeEach(async () => {
       isActive: true,
       isOnline: true,
       isAvailable: true,
+      walletBalance: 500,
       location: { type: "Point", coordinates: [88.3639, 22.5726] },
     },
   ]);
@@ -350,21 +351,22 @@ describe("Rider Socket Events", () => {
   });
 
   it("should prevent booking if rider has active ride", async () => {
-    // First booking
-    await promiseWithTimeout<any>((resolve) => {
-      riderSocket.emit(
-        "ride:book",
-        {
-          pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
-          drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
-          vehicleType: "auto",
-          paymentMethod: "cash",
-        },
-        resolve,
-      );
-    }, 8000);
+    await Ride.create({
+      riderId: new mongoose.Types.ObjectId(riderId),
+      pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
+      drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
+      distance: 5,
+      duration: 15,
+      vehicleType: "auto",
+      fare: 100,
+      platformFee: 15,
+      driverEarning: 85,
+      discount: 0,
+      paymentMethod: "cash",
+      otp: "1234",
+      status: "searching",
+    });
 
-    // Second booking should fail
     const response = await promiseWithTimeout<any>((resolve) => {
       riderSocket.emit(
         "ride:book",
@@ -378,10 +380,8 @@ describe("Rider Socket Events", () => {
       );
     }, 8000);
 
-    // If first succeeded, second must fail
-    if (response.success === false) {
-      expect(response.error).toContain("active ride");
-    }
+    expect(response.success).toBe(false);
+    expect(response.error).toContain("active ride");
   });
 
   it("should handle ride:cancel for existing cancellable ride", async () => {
@@ -519,6 +519,7 @@ describe("Driver Socket Events", () => {
 
     const ride = await Ride.create({
       riderId: new mongoose.Types.ObjectId(riderId),
+      driverId: new mongoose.Types.ObjectId(driverId),
       pickup: { lat: 22.5726, lng: 88.3639, address: "Kolkata" },
       drop: { lat: 22.6, lng: 88.4, address: "Salt Lake" },
       distance: 5,
@@ -546,10 +547,10 @@ describe("Driver Socket Events", () => {
       );
     }, 3000);
 
-    const assignedEvent = await assignedEventPromise;
-
     expect(response.success).toBe(true);
     expect(response.rideId).toBe(ride._id.toString());
+
+    const assignedEvent = await assignedEventPromise;
     expect(assignedEvent).toHaveProperty("rideId", ride._id.toString());
     expect(assignedEvent.driver).toHaveProperty("name");
   });

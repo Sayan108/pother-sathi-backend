@@ -312,6 +312,36 @@ describe("Admin driver approvals and wallet control", () => {
     expect(res.body.data.banners[0].title).toBe("Visible");
   });
 
+  it("should expose active banners through public audience routes", async () => {
+    await Banner.create({
+      title: "User Visible",
+      imageUrl: "https://res.cloudinary.com/demo/image/upload/v123/user.jpg",
+      audience: "user",
+      status: "active",
+      isActive: true,
+      sortOrder: 1,
+    });
+
+    await Banner.create({
+      title: "Driver Visible",
+      imageUrl: "https://res.cloudinary.com/demo/image/upload/v123/driver.jpg",
+      audience: "driver",
+      status: "active",
+      isActive: true,
+      sortOrder: 1,
+    });
+
+    const userRes = await request(app).get("/api/banners/user");
+    expect(userRes.status).toBe(200);
+    expect(userRes.body.data.banners).toHaveLength(1);
+    expect(userRes.body.data.banners[0].title).toBe("User Visible");
+
+    const driverRes = await request(app).get("/api/banners/driver");
+    expect(driverRes.status).toBe(200);
+    expect(driverRes.body.data.banners).toHaveLength(1);
+    expect(driverRes.body.data.banners[0].title).toBe("Driver Visible");
+  });
+
   it("should process a push notification for a selected rider", async () => {
     const rider = await User.create({
       phone: "9876500001",

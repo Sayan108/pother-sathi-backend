@@ -32,6 +32,34 @@ Add these secrets in GitHub under `Settings > Secrets and variables > Actions`:
 | `VPS_SSH_KEY` | Private SSH key matching the VPS public key |
 | `VPS_PORT` | SSH port, optional, defaults to `22` |
 | `VPS_DEPLOY_PATH` | Deploy path, optional, defaults to `/var/www/pothersathi-backend` |
+| `HEALTHCHECK_URL` | Public health URL, optional, for example `https://api.pathersathi.cloud/health` |
+
+Generate a deploy key locally:
+
+```bash
+ssh-keygen -t ed25519 -C "github-actions-pothersathi" -f ./pothersathi_deploy_key
+```
+
+Add the public key to the VPS:
+
+```bash
+cat ./pothersathi_deploy_key.pub
+```
+
+Paste that output into `~/.ssh/authorized_keys` on the VPS:
+
+```bash
+mkdir -p ~/.ssh
+nano ~/.ssh/authorized_keys
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/authorized_keys
+```
+
+Add the private key content as the GitHub `VPS_SSH_KEY` secret:
+
+```bash
+cat ./pothersathi_deploy_key
+```
 
 ## First deployment
 
@@ -92,4 +120,18 @@ pm2 status
 pm2 logs pothersathi-backend
 pm2 restart pothersathi-backend
 pm2 save
+```
+
+## Deployment checks
+
+The workflow verifies the app locally on the VPS after PM2 restarts it:
+
+```bash
+curl http://127.0.0.1:5000/health
+```
+
+If `HEALTHCHECK_URL` is configured, GitHub Actions also checks the public API URL after deployment. For this project use:
+
+```text
+https://api.pathersathi.cloud/health
 ```

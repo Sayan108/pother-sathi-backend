@@ -77,7 +77,6 @@ router.post(
   sendNotification,
 );
 router.get("/banners", getBanners);
-router.get("/user-banners", getBanners);
 router.post(
   "/banners",
   [
@@ -119,51 +118,10 @@ router.post(
   validateRequest,
   createBanner,
 );
-router.post(
-  "/user-banners",
-  [
-    body("title")
-      .trim()
-      .notEmpty()
-      .withMessage("Banner title is required")
-      .isLength({ max: 120 })
-      .withMessage("Banner title must be 120 characters or fewer"),
-    body("imageUrl")
-      .optional()
-      .isURL({ protocols: ["http", "https"], require_protocol: true })
-      .withMessage("imageUrl must be a valid URL"),
-    body("bannerUrl")
-      .optional()
-      .isURL({ protocols: ["http", "https"], require_protocol: true })
-      .withMessage("bannerUrl must be a valid URL"),
-    body("linkUrl")
-      .optional({ checkFalsy: true })
-      .isURL({ protocols: ["http", "https"], require_protocol: true })
-      .withMessage("linkUrl must be a valid URL"),
-    body("status")
-      .optional()
-      .isIn(["active", "inactive", "paused"])
-      .withMessage("status must be active or inactive"),
-    body("isActive")
-      .optional()
-      .isBoolean()
-      .withMessage("isActive must be boolean"),
-    body("sortOrder")
-      .optional()
-      .isFloat({ min: 0 })
-      .withMessage("sortOrder must be non-negative"),
-  ],
-  validateRequest,
-  createBanner,
-);
 router.patch("/banners/:id/status", updateBanner);
 router.patch("/banners/:id", updateBanner);
 router.put("/banners/:id", updateBanner);
-router.patch("/user-banners/:id", updateBanner);
-router.put("/user-banners/:id", updateBanner);
 router.delete("/banners/:id", deleteBanner);
-router.delete("/user-banners/:id", deleteBanner);
-router.delete("/banners/user/:id", deleteBanner);
 router.get("/base-prices", getBasePrices);
 router.get("/fares/base-prices", getBasePrices);
 router.post(
