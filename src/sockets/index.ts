@@ -2,6 +2,8 @@ import { Server as SocketServer, Socket } from "socket.io";
 import { socketAuthMiddleware, AuthenticatedSocket } from "./socket.middleware";
 import { registerRiderSocketHandlers } from "./rider.socket";
 import { registerDriverSocketHandlers } from "./driver.socket";
+import { registerAdminSocketHandlers } from "./admin.socket";
+import { joinNotificationRooms } from "./notification.rooms";
 import { logger } from "../utils/logger";
 
 /**
@@ -18,10 +20,17 @@ export function initSocketHandlers(io: SocketServer): void {
       `Socket connected: role=${authSocket.role} user=${authSocket.userId}`,
     );
 
+    socket.on("notification:join", (_data, cb?: (response: any) => void) => {
+      joinNotificationRooms(authSocket, authSocket.role, authSocket.userId);
+      cb?.({ success: true, rooms: Array.from(socket.rooms) });
+    });
+
     if (authSocket.role === "rider") {
       registerRiderSocketHandlers(io, authSocket);
     } else if (authSocket.role === "driver") {
       await registerDriverSocketHandlers(io, authSocket);
+    } else if (authSocket.role === "admin") {
+      registerAdminSocketHandlers(io, authSocket);
     } else {
       logger.warn(`Unknown role on socket connect: ${authSocket.role}`);
       socket.disconnect(true);

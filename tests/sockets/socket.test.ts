@@ -4,6 +4,7 @@
  */
 
 import http from "http";
+import request from "supertest";
 import { io as Client } from "socket.io-client";
 import type { Socket as ClientSocket } from "socket.io-client";
 import mongoose from "mongoose";
@@ -18,6 +19,7 @@ import {
   connectTestDB,
   disconnectTestDB,
   clearCollections,
+  generateAdminToken,
   generateRiderToken,
   generateDriverToken,
   sleep,
@@ -174,6 +176,25 @@ describe("Socket Authentication", () => {
     console.log(`[Socket rider connect] latency=${latency}ms`);
   });
 
+  it("should put a connected rider in rider and notification rooms", async () => {
+    riderSocket = await connectSocket(riderToken);
+
+    const response = await new Promise<Record<string, unknown>>((resolve) => {
+      riderSocket.emit("notification:join", {}, resolve);
+    });
+
+    expect(response.success).toBe(true);
+    expect(response.rooms).toEqual(
+      expect.arrayContaining([
+        `rider:${riderId}`,
+        "riders",
+        "notifications",
+        "notifications:riders",
+        `notifications:rider:${riderId}`,
+      ]),
+    );
+  });
+
   it("should connect successfully with valid driver token", async () => {
     const start = Date.now();
     driverSocket = await connectSocket(driverToken);
@@ -181,6 +202,73 @@ describe("Socket Authentication", () => {
 
     expect(driverSocket.connected).toBe(true);
     console.log(`[Socket driver connect] latency=${latency}ms`);
+  });
+
+  it("should connect admins and allow notification room join", async () => {
+    const admin = await User.create({
+      phone: "9876543219",
+      countryCode: "+91",
+      role: "admin",
+      isVerified: true,
+      isActive: true,
+      name: "Socket Admin",
+    });
+    const adminSocket = await connectSocket(
+      generateAdminToken(admin._id.toString(), admin.phone),
+    );
+
+    const response = await new Promise<Record<string, unknown>>((resolve) => {
+      adminSocket.emit("notification:join", {}, resolve);
+    });
+
+    expect(adminSocket.connected).toBe(true);
+    expect(response.success).toBe(true);
+    expect(response.rooms).toEqual(
+      expect.arrayContaining([
+        "notifications",
+        "notifications:admins",
+        `notifications:admin:${admin._id.toString()}`,
+      ]),
+    );
+
+    adminSocket.disconnect();
+  });
+
+  it("should deliver admin notifications to online rider sockets", async () => {
+    const admin = await User.create({
+      phone: "9876543219",
+      countryCode: "+91",
+      role: "admin",
+      isVerified: true,
+      isActive: true,
+      name: "Socket Admin",
+    });
+    riderSocket = await connectSocket(riderToken);
+
+    const received = new Promise<Record<string, unknown>>((resolve) => {
+      riderSocket.once("admin:notification", resolve);
+    });
+
+    const res = await request(getServerAddress())
+      .post("/api/admin/notifications")
+      .set(
+        "Authorization",
+        `Bearer ${generateAdminToken(admin._id.toString(), admin.phone)}`,
+      )
+      .send({
+        recipientType: "rider",
+        recipientId: riderId,
+        title: "Hello online rider",
+        body: "Realtime delivery",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.onlineCount).toBe(1);
+    expect(res.body.data.socketDeliveredCount).toBe(1);
+    await expect(received).resolves.toMatchObject({
+      title: "Hello online rider",
+      body: "Realtime delivery",
+    });
   });
 
   it("should reject connection with a valid token for a missing account", async () => {

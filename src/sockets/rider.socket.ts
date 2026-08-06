@@ -8,6 +8,8 @@ import { logger } from "../utils/logger";
 import { calculateFareFromBasePrice, validateCoupon } from "../services/fare.service";
 import { getRoadRouteMetrics } from "../services/route-distance.service";
 import { findNearbyAvailableDrivers } from "../services/ride-matching.service";
+import { sendPushToDriver } from "../services/push-notification.service";
+import { joinNotificationRooms } from "./notification.rooms";
 
 function getLiveDriverSocketId(driver: any): string | undefined {
   const driverId = driver?._id?.toString();
@@ -24,6 +26,7 @@ export function registerRiderSocketHandlers(
   // Join rider-specific room
   socket.join(`rider:${riderId}`);
   socket.join("riders");
+  joinNotificationRooms(socket, "rider", riderId);
 
   // Register in-memory socket map (used by ride controller to push events)
   riderSocketMap.set(riderId, socket.id);
@@ -166,31 +169,35 @@ export function registerRiderSocketHandlers(
       // Notify driver if online. Prefer the in-memory socket map, fallback to DB socketId.
       const assignedDriverId = assignedDriver._id.toString();
       const driverSocketId = getLiveDriverSocketId(assignedDriver);
+      const pickupLabel =
+        typeof pickup?.address === "string" && pickup.address
+          ? pickup.address
+          : "a nearby pickup";
+      const rideRequestPayload = {
+        rideId: ride._id,
+        pickup,
+        drop,
+        fare: ride.fare,
+        platformFee: ride.platformFee,
+        income: ride.driverEarning,
+        driverEarning: ride.driverEarning,
+        paymentMethod: ride.paymentMethod,
+        riderId,
+        rider: rider
+          ? {
+              name: rider.name,
+              phone: rider.phone,
+              avatar: rider.avatar,
+              rating: rider.rating,
+            }
+          : undefined,
+        vehicleType: ride.vehicleType,
+        distance: `${Number(distanceKm).toFixed(1)} km`,
+        distanceKm,
+        estimatedDuration: routeMetrics.durationMinutes,
+        routeMetrics,
+      };
       if (driverSocketId) {
-        const rideRequestPayload = {
-          rideId: ride._id,
-          pickup,
-          drop,
-          fare: ride.fare,
-          platformFee: ride.platformFee,
-          income: ride.driverEarning,
-          driverEarning: ride.driverEarning,
-          paymentMethod: ride.paymentMethod,
-          riderId,
-          rider: rider
-            ? {
-                name: rider.name,
-                phone: rider.phone,
-                avatar: rider.avatar,
-                rating: rider.rating,
-              }
-            : undefined,
-          vehicleType: ride.vehicleType,
-          distance: `${Number(distanceKm).toFixed(1)} km`,
-          distanceKm,
-          estimatedDuration: routeMetrics.durationMinutes,
-          routeMetrics,
-        };
         io.to(driverSocketId).emit("ride:request", rideRequestPayload);
         io.to(driverSocketId).emit("ride:assigned", rideRequestPayload);
         io.to(driverSocketId).emit("pickup:route", {
@@ -204,6 +211,16 @@ export function registerRiderSocketHandlers(
           drop,
         });
       }
+
+      await sendPushToDriver(assignedDriverId, {
+        title: "New ride request",
+        body: `Pickup near ${pickupLabel}`,
+        data: {
+          type: "ride_request",
+          rideId: ride._id.toString(),
+          role: "driver",
+        },
+      });
       cb({
         success: true,
         rideId: ride._id,
@@ -265,7 +282,7 @@ export function registerRiderSocketHandlers(
         await Driver.findByIdAndUpdate(ride.driverId, {
           $set: { isAvailable: true, currentRideId: null },
         });
-        // Notify driver
+        // Notify driver via socket + FCM
         const driver = await Driver.findById(ride.driverId)
           .select("socketId")
           .lean();
@@ -276,6 +293,17 @@ export function registerRiderSocketHandlers(
             reason,
           });
         }
+        await sendPushToDriver(ride.driverId.toString(), {
+          title: "Ride cancelled",
+          body: reason || "The rider cancelled the ride.",
+          data: {
+            type: "ride_cancelled",
+            rideId: ride._id.toString(),
+            cancelledBy: "rider",
+            reason: reason || "",
+            role: "driver",
+          },
+        });
       }
       cb({ success: true });
     } catch (err) {

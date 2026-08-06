@@ -6,12 +6,80 @@ import {
 } from "firebase-admin/app";
 import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
 import { env } from "../config/environment";
+import { Driver } from "../models/Driver";
+import { User } from "../models/User";
 import { logger } from "../utils/logger";
+
+/** Must match the Android notification channel created by the Capacitor apps. */
+export const FCM_ANDROID_CHANNEL_ID = "pothersathi_rides";
 
 export interface PushPayload {
   title: string;
   body: string;
   data?: Record<string, string>;
+}
+
+export interface PushSendResult {
+  configured: boolean;
+  requested: number;
+  successCount: number;
+  failureCount: number;
+  invalidTokens: string[];
+}
+
+export function getStoredTokens(user: {
+  fcmToken?: string;
+  fcmTokens?: string[];
+}) {
+  return [
+    ...(Array.isArray(user.fcmTokens) ? user.fcmTokens : []),
+    user.fcmToken,
+  ].filter((token): token is string => Boolean(token));
+}
+
+function toStringData(
+  data?: Record<string, string | number | boolean | null | undefined>,
+): Record<string, string> | undefined {
+  if (!data) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined || value === null) continue;
+    out[key] = String(value);
+  }
+  return out;
+}
+
+export async function removeInvalidPushTokens(tokens: string[]) {
+  if (tokens.length === 0) return;
+
+  await Promise.all([
+    User.updateMany({}, { $pull: { fcmTokens: { $in: tokens } } }),
+    User.updateMany({ fcmToken: { $in: tokens } }, { $unset: { fcmToken: "" } }),
+    Driver.updateMany({}, { $pull: { fcmTokens: { $in: tokens } } }),
+    Driver.updateMany(
+      { fcmToken: { $in: tokens } },
+      { $unset: { fcmToken: "" } },
+    ),
+  ]);
+}
+
+export async function clearPushToken(
+  role: "rider" | "driver",
+  userId: string,
+  fcmToken: string,
+) {
+  if (role === "rider") {
+    await User.findByIdAndUpdate(userId, {
+      $pull: { fcmTokens: fcmToken },
+      $unset: { fcmToken: "" },
+    });
+    return;
+  }
+
+  await Driver.findByIdAndUpdate(userId, {
+    $pull: { fcmTokens: fcmToken },
+    $unset: { fcmToken: "" },
+  });
 }
 
 function getFirebaseApp() {
@@ -54,7 +122,10 @@ export function isPushConfigured() {
   return Boolean(getFirebaseApp());
 }
 
-export async function sendPushToTokens(tokens: string[], payload: PushPayload) {
+export async function sendPushToTokens(
+  tokens: string[],
+  payload: PushPayload,
+): Promise<PushSendResult> {
   const uniqueTokens = [...new Set(tokens.filter(Boolean))];
   if (uniqueTokens.length === 0) {
     return {
@@ -84,12 +155,13 @@ export async function sendPushToTokens(tokens: string[], payload: PushPayload) {
       title: payload.title,
       body: payload.body,
     },
-    data: payload.data,
+    data: toStringData(payload.data),
     android: {
       priority: "high",
       notification: {
-        channelId: "default",
+        channelId: FCM_ANDROID_CHANNEL_ID,
         sound: "default",
+        priority: "high",
       },
     },
     apns: {
@@ -132,4 +204,32 @@ export async function sendPushToTokens(tokens: string[], payload: PushPayload) {
     failureCount: response.failureCount,
     invalidTokens,
   };
+}
+
+export async function sendPushToRider(
+  riderId: string,
+  payload: PushPayload,
+): Promise<PushSendResult> {
+  const rider = await User.findById(riderId).select("fcmToken fcmTokens").lean();
+  const result = await sendPushToTokens(
+    rider ? getStoredTokens(rider) : [],
+    payload,
+  );
+  await removeInvalidPushTokens(result.invalidTokens);
+  return result;
+}
+
+export async function sendPushToDriver(
+  driverId: string,
+  payload: PushPayload,
+): Promise<PushSendResult> {
+  const driver = await Driver.findById(driverId)
+    .select("fcmToken fcmTokens")
+    .lean();
+  const result = await sendPushToTokens(
+    driver ? getStoredTokens(driver) : [],
+    payload,
+  );
+  await removeInvalidPushTokens(result.invalidTokens);
+  return result;
 }

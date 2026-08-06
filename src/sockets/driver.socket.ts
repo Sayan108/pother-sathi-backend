@@ -12,6 +12,11 @@ import {
   findNearbyAvailableDrivers,
   isRideRequestExpired,
 } from "../services/ride-matching.service";
+import {
+  sendPushToDriver,
+  sendPushToRider,
+} from "../services/push-notification.service";
+import { joinNotificationRooms } from "./notification.rooms";
 
 export const driverSocketMap = new Map<string, string>();
 
@@ -33,9 +38,27 @@ function emitToRider(
   event: string,
   payload: Record<string, unknown>,
 ) {
+  let delivered = false;
   io.to(`rider:${riderId.toString()}`).emit(event, payload);
   const riderSocketId = riderSocketMap.get(riderId.toString());
-  if (riderSocketId) io.to(riderSocketId).emit(event, payload);
+  if (riderSocketId) {
+    io.to(riderSocketId).emit(event, payload);
+    delivered = true;
+  }
+  return delivered;
+}
+
+async function pushRiderRideUpdate(
+  riderId: mongoose.Types.ObjectId,
+  title: string,
+  body: string,
+  data: Record<string, string>,
+) {
+  await sendPushToRider(riderId.toString(), {
+    title,
+    body,
+    data,
+  });
 }
 
 async function emitRideRequestToDriver(
@@ -43,8 +66,8 @@ async function emitRideRequestToDriver(
   ride: any,
   driver: any,
 ) {
-  const driverSocketId = driverSocketMap.get(driver._id.toString());
-  if (!driverSocketId) return false;
+  const driverId = driver._id.toString();
+  const driverSocketId = driverSocketMap.get(driverId);
 
   const rider = await User.findById(ride.riderId)
     .select("name phone avatar rating")
@@ -73,19 +96,37 @@ async function emitRideRequestToDriver(
     estimatedDuration: ride.duration,
   };
 
-  io.to(driverSocketId).emit("ride:request", rideRequestPayload);
-  io.to(driverSocketId).emit("ride:assigned", rideRequestPayload);
-  io.to(driverSocketId).emit("pickup:route", {
-    rideId: ride._id,
-    pickup: ride.pickup,
-    driverLocation: driver.location?.coordinates,
+  if (driverSocketId) {
+    io.to(driverSocketId).emit("ride:request", rideRequestPayload);
+    io.to(driverSocketId).emit("ride:assigned", rideRequestPayload);
+    io.to(driverSocketId).emit("pickup:route", {
+      rideId: ride._id,
+      pickup: ride.pickup,
+      driverLocation: driver.location?.coordinates,
+    });
+    io.to(driverSocketId).emit("destination:route", {
+      rideId: ride._id,
+      pickup: ride.pickup,
+      drop: ride.drop,
+    });
+  }
+
+  // Always FCM so backgrounded driver apps still get the request.
+  const pickupLabel =
+    typeof ride.pickup?.address === "string" && ride.pickup.address
+      ? ride.pickup.address
+      : "a nearby pickup";
+  await sendPushToDriver(driverId, {
+    title: "New ride request",
+    body: `Pickup near ${pickupLabel}`,
+    data: {
+      type: "ride_request",
+      rideId: ride._id.toString(),
+      role: "driver",
+    },
   });
-  io.to(driverSocketId).emit("destination:route", {
-    rideId: ride._id,
-    pickup: ride.pickup,
-    drop: ride.drop,
-  });
-  return true;
+
+  return Boolean(driverSocketId);
 }
 
 async function offerRideToNextDriver(
@@ -172,6 +213,7 @@ export async function registerDriverSocketHandlers(
 
   socket.join(`driver:${driverId}`);
   socket.join("drivers");
+  joinNotificationRooms(socket, "driver", driverId);
   driverSocketMap.set(driverId, socket.id);
   await Driver.findByIdAndUpdate(driverId, { socketId: socket.id }).exec();
 
@@ -256,6 +298,17 @@ export async function registerDriverSocketHandlers(
       };
       emitToRider(io, ride.riderId, "driver:assigned", payload);
       emitToRider(io, ride.riderId, "ride:driver_assigned", payload);
+      await pushRiderRideUpdate(
+        ride.riderId,
+        "Driver assigned",
+        `${driver.name || "Your driver"} is on the way to your pickup.`,
+        {
+          type: "ride_driver_assigned",
+          rideId: ride._id.toString(),
+          driverId: driver._id.toString(),
+          role: "rider",
+        },
+      );
 
       cb?.({
         success: true,
@@ -290,6 +343,16 @@ export async function registerDriverSocketHandlers(
       await ride.save();
       emitToRider(io, ride.riderId, "driver:arrived", { rideId: ride._id });
       emitToRider(io, ride.riderId, "ride:driver_arrived", { rideId: ride._id });
+      await pushRiderRideUpdate(
+        ride.riderId,
+        "Driver arrived",
+        "Your driver has reached the pickup point.",
+        {
+          type: "ride_driver_arrived",
+          rideId: ride._id.toString(),
+          role: "rider",
+        },
+      );
       cb?.({ success: true });
     } catch (err) {
       logger.error("ride:arrived error:", err);
@@ -345,6 +408,16 @@ export async function registerDriverSocketHandlers(
       ride.startedAt = new Date();
       await ride.save();
       emitToRider(io, ride.riderId, "ride:started", { rideId: ride._id });
+      await pushRiderRideUpdate(
+        ride.riderId,
+        "Ride started",
+        "Your ride has started.",
+        {
+          type: "ride_started",
+          rideId: ride._id.toString(),
+          role: "rider",
+        },
+      );
       cb?.({ success: true, rideId: ride._id, status: ride.status });
     } catch (err) {
       logger.error("ride:start error:", err);
@@ -424,6 +497,18 @@ export async function registerDriverSocketHandlers(
         fare: ride.fare,
         paymentMethod: ride.paymentMethod,
       });
+      await pushRiderRideUpdate(
+        ride.riderId,
+        "Ride completed",
+        `Your ride is complete. Fare: Rs ${ride.fare}.`,
+        {
+          type: "ride_completed",
+          rideId: ride._id.toString(),
+          fare: String(ride.fare),
+          paymentMethod: ride.paymentMethod,
+          role: "rider",
+        },
+      );
       cb?.({
         success: true,
         rideId: ride._id,
@@ -478,6 +563,18 @@ export async function registerDriverSocketHandlers(
         cancelledBy: "driver",
         reason: data?.reason,
       });
+      await pushRiderRideUpdate(
+        ride.riderId,
+        "Driver cancelled",
+        data?.reason || "Your driver cancelled the ride.",
+        {
+          type: "ride_driver_cancelled",
+          rideId: ride._id.toString(),
+          cancelledBy: "driver",
+          reason: data?.reason || "",
+          role: "rider",
+        },
+      );
       cb?.({ success: true });
     } catch (err) {
       logger.error("ride:cancel error:", err);

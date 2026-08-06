@@ -23,6 +23,7 @@ import {
   deleteDriverAccount,
   deleteRiderAccount,
   getBanners,
+  getNotificationSocketStatus,
   createBanner,
   updateBanner,
   deleteBanner,
@@ -49,6 +50,7 @@ router.get("/drivers/kyc/pending", getPendingDrivers);
 router.get("/riders", getRiders);
 router.get("/leaders", getUnionLeaders);
 router.get("/rides", getRides);
+router.get("/notifications/socket-status", getNotificationSocketStatus);
 router.post(
   "/notifications",
   [

@@ -6,6 +6,7 @@ import {
   getRideById,
   getWallet,
   updateFcmToken,
+  clearFcmToken,
   updateProfileValidation,
 } from "../controllers/rider.controller";
 import { authenticate, requireRider } from "../middleware/auth.middleware";
@@ -39,5 +40,8 @@ router.put(
   validateRequest,
   updateFcmToken,
 );
+
+// DELETE /api/rider/fcm-token
+router.delete("/fcm-token", clearFcmToken);
 
 export default router;

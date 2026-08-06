@@ -12,7 +12,16 @@ import { env } from "../config/environment";
 import { sendSuccess, sendError, sendNotFound } from "../utils/response";
 import { DEFAULT_FARE_CONFIG } from "../services/fare.service";
 import { getIO } from "../config/socket";
-import { sendPushToTokens } from "../services/push-notification.service";
+import {
+  getStoredTokens,
+  removeInvalidPushTokens,
+  sendPushToTokens,
+} from "../services/push-notification.service";
+import {
+  ADMIN_NOTIFICATION_EVENT,
+  roleNotificationRoom,
+  userNotificationRoom,
+} from "../sockets/notification.rooms";
 
 type AdminDriverListItem = {
   aadhaarNumber?: string;
@@ -93,24 +102,6 @@ async function ensureDefaultBasePrices() {
   );
 }
 
-function getStoredTokens(user: { fcmToken?: string; fcmTokens?: string[] }) {
-  return [
-    ...(Array.isArray(user.fcmTokens) ? user.fcmTokens : []),
-    user.fcmToken,
-  ].filter((token): token is string => Boolean(token));
-}
-
-async function removeInvalidTokens(tokens: string[]) {
-  if (tokens.length === 0) return;
-
-  await Promise.all([
-    User.updateMany({}, { $pull: { fcmTokens: { $in: tokens } } }),
-    User.updateMany({ fcmToken: { $in: tokens } }, { $unset: { fcmToken: "" } }),
-    Driver.updateMany({}, { $pull: { fcmTokens: { $in: tokens } } }),
-    Driver.updateMany({ fcmToken: { $in: tokens } }, { $unset: { fcmToken: "" } }),
-  ]);
-}
-
 async function resolveNotificationRecipients(
   recipientType: string,
   recipientId?: string,
@@ -129,7 +120,10 @@ async function resolveNotificationRecipients(
     if (!rider) return { error: "Rider not found", notFound: true };
     return {
       recipients: [{ ...rider, role: "rider" as const }],
-      rooms: [`rider:${rider._id.toString()}`],
+      rooms: [
+        userNotificationRoom("rider", rider._id.toString()),
+        `rider:${rider._id.toString()}`,
+      ],
     };
   }
 
@@ -146,7 +140,10 @@ async function resolveNotificationRecipients(
     if (!driver) return { error: "Driver not found", notFound: true };
     return {
       recipients: [{ ...driver, role: "driver" as const }],
-      rooms: [`driver:${driver._id.toString()}`],
+      rooms: [
+        userNotificationRoom("driver", driver._id.toString()),
+        `driver:${driver._id.toString()}`,
+      ],
     };
   }
 
@@ -159,7 +156,7 @@ async function resolveNotificationRecipients(
       .lean();
     return {
       recipients: riders.map((rider) => ({ ...rider, role: "rider" as const })),
-      rooms: ["riders"],
+      rooms: [roleNotificationRoom("rider"), "riders"],
     };
   }
 
@@ -171,7 +168,7 @@ async function resolveNotificationRecipients(
       .lean();
     return {
       recipients: drivers.map((driver) => ({ ...driver, role: "driver" as const })),
-      rooms: ["drivers"],
+      rooms: [roleNotificationRoom("driver"), "drivers"],
     };
   }
 
@@ -194,7 +191,12 @@ async function resolveNotificationRecipients(
         ...riders.map((rider) => ({ ...rider, role: "rider" as const })),
         ...drivers.map((driver) => ({ ...driver, role: "driver" as const })),
       ],
-      rooms: ["riders", "drivers"],
+      rooms: [
+        roleNotificationRoom("rider"),
+        roleNotificationRoom("driver"),
+        "riders",
+        "drivers",
+      ],
     };
   }
 
@@ -254,13 +256,14 @@ export async function sendNotification(
     onlineCount = sockets.length;
     onlineRecipientIds = new Set(
       sockets
-        .map((socket) => (socket as any).userId)
+        .map((socket) => (socket as any).data?.userId ?? (socket as any).userId)
         .filter((id): id is string => Boolean(id)),
     );
 
-    rooms.forEach((room) => {
-      io.to(room).emit("admin:notification", payload);
-    });
+    io.to([...rooms, ...sockets.map((socket) => socket.id)]).emit(
+      ADMIN_NOTIFICATION_EVENT,
+      payload,
+    );
   } catch {
     onlineCount = 0;
   }
@@ -274,7 +277,7 @@ export async function sendNotification(
     body,
     data: payload.data,
   });
-  await removeInvalidTokens(fcmResult.invalidTokens);
+  await removeInvalidPushTokens(fcmResult.invalidTokens);
 
   sendSuccess(res, "Notification processed", {
     recipientCount: resolved.recipients?.length ?? 0,
@@ -285,8 +288,47 @@ export async function sendNotification(
     fcmSuccessCount: fcmResult.successCount,
     fcmFailureCount: fcmResult.failureCount,
     deliveredCount: onlineCount + fcmResult.successCount,
-    event: "admin:notification",
+    event: ADMIN_NOTIFICATION_EVENT,
   });
+}
+
+export async function getNotificationSocketStatus(
+  _req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    const io = getIO();
+    const [allSockets, riderSockets, driverSockets, adminSockets] =
+      await Promise.all([
+        io.in("notifications").fetchSockets(),
+        io.in(roleNotificationRoom("rider")).fetchSockets(),
+        io.in(roleNotificationRoom("driver")).fetchSockets(),
+        io.in(roleNotificationRoom("admin")).fetchSockets(),
+      ]);
+
+    const users = allSockets.map((socket) => ({
+      socketId: socket.id,
+      userId: (socket as any).data?.userId,
+      role: (socket as any).data?.role,
+      rooms: Array.from(socket.rooms).filter((room) => room !== socket.id),
+    }));
+
+    sendSuccess(res, "Notification socket status fetched", {
+      totalOnlineSockets: allSockets.length,
+      ridersOnline: riderSockets.length,
+      driversOnline: driverSockets.length,
+      adminsOnline: adminSockets.length,
+      users,
+    });
+  } catch {
+    sendSuccess(res, "Notification socket status fetched", {
+      totalOnlineSockets: 0,
+      ridersOnline: 0,
+      driversOnline: 0,
+      adminsOnline: 0,
+      users: [],
+    });
+  }
 }
 
 function normalizeBannerStatus(body: Record<string, unknown>) {

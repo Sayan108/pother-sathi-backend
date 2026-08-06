@@ -12,6 +12,7 @@ import {
   requestWalletRecharge,
   rechargeWallet,
   updateFcmToken,
+  clearFcmToken,
   createReferralCode,
   registerDriverValidation,
   locationUpdateValidation,
@@ -106,5 +107,8 @@ router.put(
   validateRequest,
   updateFcmToken,
 );
+
+// DELETE /api/driver/fcm-token
+router.delete("/fcm-token", clearFcmToken);
 
 export default router;

@@ -11,6 +11,10 @@ import {
 } from "../services/fare.service";
 import { getRoadRouteMetrics } from "../services/route-distance.service";
 import { isRideRequestExpired } from "../services/ride-matching.service";
+import {
+  sendPushToDriver,
+  sendPushToRider,
+} from "../services/push-notification.service";
 import { getIO } from "../config/socket";
 import {
   sendSuccess,
@@ -208,6 +212,16 @@ export async function acceptRide(req: Request, res: Response): Promise<void> {
       estimatedArrival: "5 mins",
     });
   }
+  await sendPushToRider(ride.riderId.toString(), {
+    title: "Driver assigned",
+    body: `${driver.name || "Your driver"} is on the way to your pickup.`,
+    data: {
+      type: "ride_driver_assigned",
+      rideId: ride._id.toString(),
+      driverId: driver._id.toString(),
+      role: "rider",
+    },
+  });
 
   sendSuccess(res, "Ride accepted", {
     rideId: ride._id,
@@ -245,6 +259,15 @@ export async function driverArrived(
   if (riderSocketId) {
     io.to(riderSocketId).emit("ride:driver_arrived", { rideId: ride._id });
   }
+  await sendPushToRider(ride.riderId.toString(), {
+    title: "Driver arrived",
+    body: "Your driver has reached the pickup point.",
+    data: {
+      type: "ride_driver_arrived",
+      rideId: ride._id.toString(),
+      role: "rider",
+    },
+  });
 
   sendSuccess(res, "Arrival confirmed. Ask rider for OTP.");
 }
@@ -283,6 +306,15 @@ export async function verifyRideOTP(
   if (riderSocketId) {
     io.to(riderSocketId).emit("ride:started", { rideId: ride._id });
   }
+  await sendPushToRider(ride.riderId.toString(), {
+    title: "Ride started",
+    body: "Your ride has started.",
+    data: {
+      type: "ride_started",
+      rideId: ride._id.toString(),
+      role: "rider",
+    },
+  });
 
   sendSuccess(res, "OTP verified. Ride started!", {
     rideId: ride._id,
@@ -352,6 +384,17 @@ export async function completeRide(req: Request, res: Response): Promise<void> {
       drop: ride.drop,
     });
   }
+  await sendPushToRider(ride.riderId.toString(), {
+    title: "Ride completed",
+    body: `Your ride is complete. Fare: Rs ${ride.fare}.`,
+    data: {
+      type: "ride_completed",
+      rideId: ride._id.toString(),
+      fare: String(ride.fare),
+      paymentMethod: ride.paymentMethod,
+      role: "rider",
+    },
+  });
 
   sendSuccess(res, "Ride completed successfully", {
     rideId: ride._id,
@@ -423,6 +466,19 @@ export async function cancelRide(req: Request, res: Response): Promise<void> {
         reason,
       });
     }
+    if (ride.driverId) {
+      await sendPushToDriver(ride.driverId.toString(), {
+        title: "Ride cancelled",
+        body: reason || "The rider cancelled the ride.",
+        data: {
+          type: "ride_cancelled",
+          rideId: ride._id.toString(),
+          cancelledBy: "rider",
+          reason: reason || "",
+          role: "driver",
+        },
+      });
+    }
   } else {
     // Notify rider
     const riderSocketId = await getRiderSocketId(ride.riderId.toString());
@@ -433,6 +489,17 @@ export async function cancelRide(req: Request, res: Response): Promise<void> {
         reason,
       });
     }
+    await sendPushToRider(ride.riderId.toString(), {
+      title: "Driver cancelled",
+      body: reason || "Your driver cancelled the ride.",
+      data: {
+        type: "ride_driver_cancelled",
+        rideId: ride._id.toString(),
+        cancelledBy: "driver",
+        reason: reason || "",
+        role: "rider",
+      },
+    });
   }
 
   sendSuccess(res, "Ride cancelled");

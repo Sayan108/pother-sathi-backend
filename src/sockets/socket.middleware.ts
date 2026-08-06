@@ -48,6 +48,8 @@ export async function socketAuthMiddleware(
     authSocket.userId = payload.id;
     authSocket.role = payload.role;
     authSocket.phone = payload.phone;
+    authSocket.data.userId = payload.id;
+    authSocket.data.role = payload.role;
     next();
   } catch {
     next(new Error("Invalid or expired token"));

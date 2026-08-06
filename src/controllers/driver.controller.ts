@@ -660,3 +660,27 @@ export async function updateFcmToken(
   });
   sendSuccess(res, "FCM token updated");
 }
+
+/**
+ * DELETE /api/driver/fcm-token
+ */
+export async function clearFcmToken(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { fcmToken } = req.body as { fcmToken?: string };
+  if (!fcmToken) {
+    await Driver.findByIdAndUpdate(req.user!.id, {
+      $unset: { fcmToken: "" },
+      $set: { fcmTokens: [] },
+    });
+    sendSuccess(res, "FCM tokens cleared");
+    return;
+  }
+
+  await Driver.findByIdAndUpdate(req.user!.id, {
+    $pull: { fcmTokens: fcmToken },
+    $unset: { fcmToken: "" },
+  });
+  sendSuccess(res, "FCM token cleared");
+}
