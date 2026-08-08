@@ -104,9 +104,13 @@ export function registerRiderSocketHandlers(
         status: {
           $in: [
             "searching",
+            "requested",
+            "accepted",
+            "driver_on_the_way",
             "driver_assigned",
             "driver_arrived",
             "otp_verified",
+            "started",
             "in_progress",
           ],
         },

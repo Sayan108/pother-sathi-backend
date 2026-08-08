@@ -29,6 +29,11 @@ import {
   deleteBanner,
   sendNotification,
 } from "../controllers/admin.controller";
+import {
+  getPaymentSettings,
+  updatePaymentSettings,
+  updatePaymentSettingsValidation,
+} from "../controllers/payment-settings.controller";
 import { authenticate, requireAdmin } from "../middleware/auth.middleware";
 
 const router = Router();
@@ -228,6 +233,15 @@ router.put(
 );
 router.delete("/base-prices/:id", deleteBasePrice);
 router.delete("/fares/base-prices/:id", deleteBasePrice);
+
+router.get("/payment-settings", getPaymentSettings);
+router.put(
+  "/payment-settings",
+  updatePaymentSettingsValidation,
+  validateRequest,
+  updatePaymentSettings,
+);
+
 router.get("/drivers/:id/kyc", getDriverKycDetails);
 router.patch("/drivers/:id/verify", verifyDriver);
 router.patch("/drivers/:id/kyc/approve", verifyDriver);

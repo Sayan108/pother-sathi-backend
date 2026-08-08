@@ -18,6 +18,7 @@ import {
   locationUpdateValidation,
   rechargeWalletValidation,
 } from "../controllers/driver.controller";
+import { getPaymentSettings } from "../controllers/payment-settings.controller";
 import {
   authenticate,
   requireDriver,
@@ -99,6 +100,9 @@ router.post(
   validateRequest,
   requestWalletRecharge,
 );
+
+// GET  /api/driver/payment-settings
+router.get("/payment-settings", getPaymentSettings);
 
 // PUT  /api/driver/fcm-token
 router.put(
