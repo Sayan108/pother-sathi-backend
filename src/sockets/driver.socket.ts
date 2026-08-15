@@ -32,6 +32,31 @@ async function getApprovedDriver(driverId: string) {
   return driver;
 }
 
+/** Mark driver free for matching and rejoin the available socket room. */
+async function restoreDriverAvailability(
+  io: SocketServer,
+  driverId: string,
+) {
+  const driver = await Driver.findByIdAndUpdate(
+    driverId,
+    {
+      $set: { isAvailable: true, currentRideId: null },
+    },
+    { new: true },
+  );
+
+  if (!driver?.isOnline) return driver;
+
+  const socketId = driverSocketMap.get(driverId) ?? driver.socketId ?? undefined;
+  if (!socketId) return driver;
+
+  const sock = io.sockets.sockets.get(socketId);
+  if (sock) {
+    sock.join("drivers:available");
+  }
+  return driver;
+}
+
 function emitToRider(
   io: SocketServer,
   riderId: mongoose.Types.ObjectId,
@@ -280,6 +305,7 @@ export async function registerDriverSocketHandlers(
       driver.isAvailable = false;
       driver.currentRideId = ride._id;
       await driver.save();
+      socket.leave("drivers:available");
 
       const payload = {
         rideId: ride._id,
@@ -476,8 +502,6 @@ export async function registerDriverSocketHandlers(
       driver.walletBalance = Math.max(0, driver.walletBalance - ride.platformFee);
       driver.totalEarnings += ride.driverEarning;
       driver.totalRides += 1;
-      driver.isAvailable = true;
-      driver.currentRideId = undefined;
       await driver.save();
       await Transaction.create({
         userId: driver._id,
@@ -490,6 +514,9 @@ export async function registerDriverSocketHandlers(
         description: `Platform fee deduction for ride ${ride._id}`,
         status: "completed",
       });
+
+      // Free driver for new matching (isAvailable + available room).
+      const refreshed = await restoreDriverAvailability(io, driverId);
 
       await User.findByIdAndUpdate(ride.riderId, { $inc: { totalRides: 1 } });
       emitToRider(io, ride.riderId, "ride:completed", {
@@ -514,7 +541,7 @@ export async function registerDriverSocketHandlers(
         rideId: ride._id,
         earning: ride.driverEarning,
         platformFee: ride.platformFee,
-        walletBalance: driver.walletBalance,
+        walletBalance: refreshed?.walletBalance ?? driver.walletBalance,
       });
     } catch (err) {
       logger.error("ride:complete error:", err);
@@ -550,9 +577,7 @@ export async function registerDriverSocketHandlers(
       ride.cancellationReason = data?.reason;
       ride.cancelledAt = new Date();
       await ride.save();
-      driver.isAvailable = true;
-      driver.currentRideId = undefined;
-      await driver.save();
+      await restoreDriverAvailability(io, driverId);
       emitToRider(io, ride.riderId, "ride:cancelled", {
         rideId: ride._id,
         cancelledBy: "driver",

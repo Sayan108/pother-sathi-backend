@@ -288,10 +288,17 @@ export function registerRiderSocketHandlers(
         });
         // Notify driver via socket + FCM
         const driver = await Driver.findById(ride.driverId)
-          .select("socketId")
+          .select("socketId isOnline")
           .lean();
-        if (driver?.socketId) {
-          io.to(driver.socketId).emit("ride:cancelled", {
+        const driverIdStr = ride.driverId.toString();
+        const socketId =
+          driverSocketMap.get(driverIdStr) ?? driver?.socketId ?? undefined;
+        if (socketId && driver?.isOnline !== false) {
+          const sock = io.sockets.sockets.get(socketId);
+          sock?.join("drivers:available");
+        }
+        if (driver?.socketId || socketId) {
+          io.to(socketId || driver!.socketId!).emit("ride:cancelled", {
             rideId: ride._id,
             cancelledBy: "rider",
             reason,

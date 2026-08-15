@@ -352,8 +352,6 @@ export async function completeRide(req: Request, res: Response): Promise<void> {
     driver.walletBalance = Math.max(0, driver.walletBalance - ride.platformFee);
     driver.totalEarnings += ride.driverEarning;
     driver.totalRides += 1;
-    driver.isAvailable = true;
-    driver.currentRideId = undefined;
     await driver.save();
 
     await Transaction.create({
@@ -369,11 +367,27 @@ export async function completeRide(req: Request, res: Response): Promise<void> {
     });
   }
 
+  await Driver.findByIdAndUpdate(driverId, {
+    $set: { isAvailable: true, currentRideId: null },
+  });
+
+  // Rejoin available pool if the driver socket is still connected.
+  const io = getIO();
+  try {
+    const { driverSocketMap } = await import("../sockets/driver.socket");
+    const socketId = driverSocketMap.get(driverId);
+    if (socketId) {
+      const sock = io.sockets.sockets.get(socketId);
+      sock?.join("drivers:available");
+    }
+  } catch {
+    // Non-critical: matching still uses DB isAvailable + socket map.
+  }
+
   // Update rider's total rides
   await User.findByIdAndUpdate(ride.riderId, { $inc: { totalRides: 1 } });
 
   // Notify rider
-  const io = getIO();
   const riderSocketId = await getRiderSocketId(ride.riderId.toString());
   if (riderSocketId) {
     io.to(riderSocketId).emit("ride:completed", {
@@ -445,15 +459,27 @@ export async function cancelRide(req: Request, res: Response): Promise<void> {
   ride.cancelledAt = new Date();
   await ride.save();
 
+  const io = getIO();
+
   // Free up driver if assigned
   if (ride.driverId) {
     await Driver.findByIdAndUpdate(ride.driverId, {
       $set: { isAvailable: true, currentRideId: null },
     });
+    try {
+      const { driverSocketMap } = await import("../sockets/driver.socket");
+      const driverIdStr = ride.driverId.toString();
+      const socketId = driverSocketMap.get(driverIdStr);
+      if (socketId) {
+        const sock = io.sockets.sockets.get(socketId);
+        sock?.join("drivers:available");
+      }
+    } catch {
+      // Non-critical
+    }
   }
 
   // Notify the other party
-  const io = getIO();
   if (role === "rider") {
     // Notify driver
     const driver = await Driver.findById(ride.driverId)

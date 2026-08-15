@@ -116,7 +116,7 @@ export const updatePaymentSettingsValidation = [
         new URL(value);
         return true;
       } catch {
-        throw new Error("qrImageUrl must be a valid URL");
+        throw new Error("qrImageUrl mus t be a valid URL");
       }
     }),
 ];
