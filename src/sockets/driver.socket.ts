@@ -118,7 +118,9 @@ async function emitRideRequestToDriver(
     vehicleType: ride.vehicleType,
     distance: ride.distance != null ? `${Number(ride.distance).toFixed(1)} km` : undefined,
     distanceKm: ride.distance,
+    distanceMode: "road" as const,
     estimatedDuration: ride.duration,
+    routePolyline: ride.routePolyline,
   };
 
   if (driverSocketId) {
@@ -133,6 +135,10 @@ async function emitRideRequestToDriver(
       rideId: ride._id,
       pickup: ride.pickup,
       drop: ride.drop,
+      distanceKm: ride.distance,
+      distanceMode: "road",
+      estimatedDuration: ride.duration,
+      routePolyline: ride.routePolyline,
     });
   }
 

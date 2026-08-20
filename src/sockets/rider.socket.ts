@@ -156,6 +156,7 @@ export function registerRiderSocketHandlers(
         drop,
         distance: distanceKm,
         duration: routeMetrics.durationMinutes,
+        routePolyline: routeMetrics.polyline,
         vehicleType,
         fare: fareBreakdown.finalFare,
         platformFee: fareBreakdown.platformFee,
@@ -198,8 +199,10 @@ export function registerRiderSocketHandlers(
         vehicleType: ride.vehicleType,
         distance: `${Number(distanceKm).toFixed(1)} km`,
         distanceKm,
+        distanceMode: routeMetrics.distanceMode,
         estimatedDuration: routeMetrics.durationMinutes,
         routeMetrics,
+        routePolyline: routeMetrics.polyline,
       };
       if (driverSocketId) {
         io.to(driverSocketId).emit("ride:request", rideRequestPayload);
@@ -213,6 +216,10 @@ export function registerRiderSocketHandlers(
           rideId: ride._id,
           pickup,
           drop,
+          distanceKm,
+          distanceMode: routeMetrics.distanceMode,
+          estimatedDuration: routeMetrics.durationMinutes,
+          routePolyline: routeMetrics.polyline,
         });
       }
 

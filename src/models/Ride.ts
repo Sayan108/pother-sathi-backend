@@ -32,8 +32,9 @@ export interface IRide extends Document {
 
   pickup: ICoordinate;
   drop: ICoordinate;
-  distance?: number;       // km
-  duration?: number;       // minutes (estimated)
+  distance?: number;       // km (road-network driving distance)
+  duration?: number;       // minutes (estimated road ETA)
+  routePolyline?: string;  // encoded driving polyline (pickup → drop)
 
   vehicleType: VehicleType;
   status: RideStatus;
@@ -89,6 +90,7 @@ const rideSchema = new Schema<IRide>(
     drop: { type: coordinateSchema, required: true },
     distance: { type: Number },
     duration: { type: Number },
+    routePolyline: { type: String },
 
     vehicleType: {
       type: String,
