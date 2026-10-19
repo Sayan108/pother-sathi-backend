@@ -6,6 +6,10 @@ import { Transaction } from "../models/Transaction";
 import { RechargeRequest } from "../models/RechargeRequest";
 import { env } from "../config/environment";
 import {
+  buildRideHistoryStatusQuery,
+  parseRideHistoryStatus,
+} from "../services/ride-history.service";
+import {
   sendSuccess,
   sendCreated,
   sendError,
@@ -514,30 +518,42 @@ export async function updateLocation(
 
 /**
  * GET /api/driver/rides
+ * Query: page, limit, status=all|completed|cancelled
  */
 export async function getRideHistory(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const page = parseInt(req.query.page as string) || 1;
-  const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 10), 50);
   const skip = (page - 1) * limit;
+  const statusFilter = parseRideHistoryStatus(req.query.status);
+  const statusQuery = buildRideHistoryStatusQuery(statusFilter);
+  const driverFilter = { driverId: req.user!.id, ...statusQuery };
 
-  const [rides, total] = await Promise.all([
-    Ride.find({ driverId: req.user!.id, status: "completed" })
+  const [rides, total, completedCount, cancelledCount] = await Promise.all([
+    Ride.find(driverFilter)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .populate("riderId", "name phone avatar rating")
       .lean(),
+    Ride.countDocuments(driverFilter),
     Ride.countDocuments({ driverId: req.user!.id, status: "completed" }),
+    Ride.countDocuments({ driverId: req.user!.id, status: "cancelled" }),
   ]);
 
   sendSuccess(res, "Ride history fetched", rides, 200, {
     page,
     limit,
     total,
-    totalPages: Math.ceil(total / limit),
+    totalPages: Math.max(1, Math.ceil(total / limit)),
+    status: statusFilter,
+    counts: {
+      completed: completedCount,
+      cancelled: cancelledCount,
+      all: completedCount + cancelledCount,
+    },
   });
 }
 

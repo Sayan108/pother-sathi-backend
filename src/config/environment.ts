@@ -50,6 +50,10 @@ export const env = {
   PLATFORM_FEE_PERCENT: parseFloat(process.env.PLATFORM_FEE_PERCENT || "15"),
 
   // Driver wallet
+  /** When set, overrides ride.platformFee as the driver post-accept cancel charge. */
+  DRIVER_CANCEL_FEE: process.env.DRIVER_CANCEL_FEE
+    ? parseFloat(process.env.DRIVER_CANCEL_FEE)
+    : NaN,
   DRIVER_MIN_WALLET_BALANCE: parseFloat(
     process.env.DRIVER_MIN_WALLET_BALANCE || "100",
   ),

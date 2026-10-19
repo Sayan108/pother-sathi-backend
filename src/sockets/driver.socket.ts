@@ -12,6 +12,7 @@ import {
   findNearbyAvailableDrivers,
   isRideRequestExpired,
 } from "../services/ride-matching.service";
+import { applyDriverCancellationFee } from "../services/ride-history.service";
 import {
   sendPushToDriver,
   sendPushToRider,
@@ -578,11 +579,20 @@ export async function registerDriverSocketHandlers(
         fail(cb, "Cancellable ride not found");
         return;
       }
+
+      const statusAtCancel = ride.status;
       ride.status = "cancelled";
       ride.cancelledBy = "driver";
       ride.cancellationReason = data?.reason;
       ride.cancelledAt = new Date();
       await ride.save();
+
+      const { fee, walletBalance } = await applyDriverCancellationFee(
+        driverId,
+        ride,
+        statusAtCancel,
+      );
+
       await restoreDriverAvailability(io, driverId);
       emitToRider(io, ride.riderId, "ride:cancelled", {
         rideId: ride._id,
@@ -606,7 +616,11 @@ export async function registerDriverSocketHandlers(
           role: "rider",
         },
       );
-      cb?.({ success: true });
+      cb?.({
+        success: true,
+        cancellationFee: fee,
+        walletBalance,
+      });
     } catch (err) {
       logger.error("ride:cancel error:", err);
       fail(cb, "Unable to cancel ride");

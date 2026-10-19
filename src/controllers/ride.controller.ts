@@ -11,6 +11,7 @@ import {
 } from "../services/fare.service";
 import { getRoadRouteMetrics } from "../services/route-distance.service";
 import { isRideRequestExpired } from "../services/ride-matching.service";
+import { applyDriverCancellationFee } from "../services/ride-history.service";
 import {
   sendPushToDriver,
   sendPushToRider,
@@ -453,11 +454,24 @@ export async function cancelRide(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  const statusAtCancel = ride.status;
   ride.status = "cancelled";
   ride.cancelledBy = role as "rider" | "driver";
   ride.cancellationReason = reason;
   ride.cancelledAt = new Date();
   await ride.save();
+
+  let cancellationFee = 0;
+  let walletBalance: number | undefined;
+  if (role === "driver") {
+    const charged = await applyDriverCancellationFee(
+      userId,
+      ride,
+      statusAtCancel,
+    );
+    cancellationFee = charged.fee;
+    walletBalance = charged.walletBalance;
+  }
 
   const io = getIO();
 
@@ -528,7 +542,10 @@ export async function cancelRide(req: Request, res: Response): Promise<void> {
     });
   }
 
-  sendSuccess(res, "Ride cancelled");
+  sendSuccess(res, "Ride cancelled", {
+    cancellationFee,
+    walletBalance,
+  });
 }
 
 /**

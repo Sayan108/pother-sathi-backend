@@ -4,6 +4,10 @@ import { User } from "../models/User";
 import { Ride } from "../models/Ride";
 import { Transaction } from "../models/Transaction";
 import {
+  buildRideHistoryStatusQuery,
+  parseRideHistoryStatus,
+} from "../services/ride-history.service";
+import {
   sendSuccess,
   sendError,
   sendNotFound,
@@ -64,17 +68,21 @@ export async function updateProfile(
 /**
  * GET /api/rider/rides
  * Paginated ride history for the rider.
+ * Query: page, limit, status=all|completed|cancelled
  */
 export async function getRideHistory(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const page = parseInt(req.query.page as string) || 1;
-  const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 10), 50);
   const skip = (page - 1) * limit;
+  const statusFilter = parseRideHistoryStatus(req.query.status);
+  const statusQuery = buildRideHistoryStatusQuery(statusFilter);
+  const riderFilter = { riderId: req.user!.id, ...statusQuery };
 
-  const [rides, total] = await Promise.all([
-    Ride.find({ riderId: req.user!.id, status: "completed" })
+  const [rides, total, completedCount, cancelledCount] = await Promise.all([
+    Ride.find(riderFilter)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -83,14 +91,22 @@ export async function getRideHistory(
         "name phone avatar vehicleType vehicleNumber rating",
       )
       .lean(),
+    Ride.countDocuments(riderFilter),
     Ride.countDocuments({ riderId: req.user!.id, status: "completed" }),
+    Ride.countDocuments({ riderId: req.user!.id, status: "cancelled" }),
   ]);
 
   sendSuccess(res, "Ride history fetched", rides, 200, {
     page,
     limit,
     total,
-    totalPages: Math.ceil(total / limit),
+    totalPages: Math.max(1, Math.ceil(total / limit)),
+    status: statusFilter,
+    counts: {
+      completed: completedCount,
+      cancelled: cancelledCount,
+      all: completedCount + cancelledCount,
+    },
   });
 }
 
