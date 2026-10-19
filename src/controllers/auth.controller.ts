@@ -48,7 +48,7 @@ export const verifyOTPValidation = [
     .matches(/^\+\d{1,4}$/),
   body("otp")
     .trim()
-    .isLength({ min: 6, max: 6 })
+    .matches(/^\d{6}$/)
     .withMessage("OTP must be exactly 6 digits"),
   body("role").isIn(["rider", "driver"]).withMessage("Invalid role"),
 ];

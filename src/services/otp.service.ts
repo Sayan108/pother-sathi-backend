@@ -355,6 +355,23 @@ function generateOTPCode(): string {
   return num.toString().padStart(6, "0");
 }
 
+// Login OTP bypass for the designated test account only.
+const OTP_BYPASS_PHONE = "7679039012";
+const OTP_BYPASS_COUNTRY_CODE = "+91";
+const OTP_BYPASS_CODE_MARKER = "__OTP_BYPASS__";
+
+function isOTPBypassAccount(
+  phone: string,
+  countryCode: string,
+  purpose: OTPPurpose = "login",
+): boolean {
+  return (
+    purpose === "login" &&
+    phone === OTP_BYPASS_PHONE &&
+    countryCode === OTP_BYPASS_COUNTRY_CODE
+  );
+}
+
 export interface SendOTPResult {
   success: boolean;
   message: string;
@@ -376,6 +393,7 @@ export async function sendOTP(
   const safePhone = String(phone).replace(/[^\d]/g, "");
   const safeCountryCode = String(countryCode).replace(/[^\d+]/g, "");
   const safeUserType = String(userType) as OTPUserType;
+  const bypassOTP = isOTPBypassAccount(safePhone, safeCountryCode, purpose);
 
   // Invalidate any existing active OTP
   await OTP.updateMany(
@@ -388,15 +406,19 @@ export async function sendOTP(
     { isUsed: true },
   );
 
-  const code = env.DEMO_MODE ? env.DEMO_OTP : generateOTPCode();
+  const code = bypassOTP
+    ? OTP_BYPASS_CODE_MARKER
+    : env.DEMO_MODE
+      ? env.DEMO_OTP
+      : generateOTPCode();
   const expiresAt = new Date(Date.now() + env.OTP_EXPIRY_MINUTES * 60 * 1000);
 
-  if (!env.DEMO_MODE && !isMessageCentralConfigured()) {
+  if (!bypassOTP && !env.DEMO_MODE && !isMessageCentralConfigured()) {
     throw new Error("Message Central VerifyNow is not configured");
   }
 
   let externalVerificationId: string | undefined;
-  if (!env.DEMO_MODE) {
+  if (!bypassOTP && !env.DEMO_MODE) {
     const result = await sendViaVerifyNow(safePhone, safeCountryCode);
     externalVerificationId = result.verificationId;
   }
@@ -404,12 +426,19 @@ export async function sendOTP(
   await OTP.create({
     phone: safePhone,
     countryCode: safeCountryCode,
-    ...(env.DEMO_MODE ? { code } : {}),
+    ...(bypassOTP || env.DEMO_MODE ? { code } : {}),
     verificationId: externalVerificationId,
     purpose,
     userType: safeUserType,
     expiresAt,
   });
+
+  if (bypassOTP) {
+    return {
+      success: true,
+      message: "OTP verification enabled for this account",
+    };
+  }
 
   if (env.DEMO_MODE) {
     logger.info(`[DEMO] OTP for ${safeCountryCode}${safePhone}: ${code}`);
@@ -437,8 +466,12 @@ export async function verifyOTP(
   // Sanitize inputs to prevent NoSQL injection
   const safePhone = String(phone).replace(/[^\d]/g, "");
   const safeCountryCode = String(countryCode).replace(/[^\d+]/g, "");
-  const safeCode = String(code).replace(/[^\d]/g, "");
+  const safeCode = String(code);
   const safeUserType = String(userType) as OTPUserType;
+
+  if (!/^\d{6}$/.test(safeCode)) {
+    return { success: false, message: "OTP must be exactly 6 digits." };
+  }
 
   const otpRecord = await OTP.findOne({
     phone: safePhone,
@@ -463,7 +496,13 @@ export async function verifyOTP(
     };
   }
 
-  if (otpRecord.verificationId) {
+  if (
+    otpRecord.code === OTP_BYPASS_CODE_MARKER &&
+    isOTPBypassAccount(safePhone, safeCountryCode)
+  ) {
+    // This account intentionally accepts any six-digit code; the record still
+    // enforces that an OTP login was requested and has not expired or been used.
+  } else if (otpRecord.verificationId) {
     try {
       const valid = await validateViaVerifyNow(
         otpRecord.verificationId,
